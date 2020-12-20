@@ -104,13 +104,14 @@ func main() {
 	}
 	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")
 	var target = flag.String("target", "http://localhost/index.html", "Local endpoint for connector")
+	var http_proxy = flag.String("http-proxy", "", "Address for establishing connections using http-proxy CONNECT method")
 	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
 	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
 	var verify_target = flag.Bool("verify-target", true, "Verify or disable client certificate check, -verify-target=false to ignore SAN")
 	var verify_collector = flag.Bool("verify-collector", true, "Verify or disable server certificate check, -verify-collector=false to ignore SAN")
-	var secure_target = flag.Bool("secure-target", true, "Enforce TLS 1.2 on client side")
-	var secure_collector = flag.Bool("secure-collector", true, "Enforce TLS 1.2 on server side")
+	var secure_target = flag.Bool("secure-target", true, "Enforce TLS 1.2+ on client side")
+	var secure_collector = flag.Bool("secure-collector", true, "Enforce TLS 1.2+ on server side")
 	//var tls_host = flag.String("host", "", "Hostname to verify outgoing connection with")
 	var verbose = flag.Bool("debug", false, "Verbose output")
 	var in_threads = flag.Int("threads", threads, "Number of concurrent tcp streams to run to improve performance")
@@ -128,6 +129,11 @@ func main() {
 	secureTarget = *secure_target
 	secureCollector = *secure_collector
 	threads = *in_threads
+	if debug {
+		if *http_proxy != "" {
+			log.Println("using http-proxy")
+		}
+	}
 
 	url_collector, err = url.Parse(*collector)
 	if err != nil {

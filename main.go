@@ -120,7 +120,7 @@ func main() {
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
 	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
 	var verify_server = flag.Bool("verify-server", true, "Verify or disable server certificate check")
-	var secure_server = flag.Bool("secure-server", true, "Enforce TLS 1.2 on server side")
+	var secure_server = flag.Bool("secure-server", true, "Enforce TLS 1.2+ on server side")
 	var tls_enabled = flag.Bool("tls", false, "Enable listener TLS (enable with -tls=true)")
 	var verbose = flag.Bool("debug", false, "Verbose output")
 	var basepath = flag.String("path", basePath, "Path into which to put the prometheus data")
