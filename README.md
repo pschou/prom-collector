@@ -58,12 +58,14 @@ The flags available for prom-satellite are:
         Remote listen URL for connector (default "http://localhost:9550/instance/test")
   -debug
         Verbose output
+  -http-proxy string
+        Address for establishing connections using http-proxy CONNECT method
   -key string
         File to load with KEY - automatically reloaded every minute (default "/etc/pki/server.pem")
   -secure-collector
-        Enforce TLS 1.2 on server side (default true)
+        Enforce TLS 1.2+ on server side (default true)
   -secure-target
-        Enforce TLS 1.2 on client side (default true)
+        Enforce TLS 1.2+ on client side (default true)
   -target string
         Local endpoint for connector (default "http://localhost/index.html")
   -threads int
