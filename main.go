@@ -111,7 +111,7 @@ func loadKeys() {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Simple SSL forwarder, written by Paul Schou github@paulschou.com in December 2020\nAll rights reserved, personal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.  For requests or support, please contact above.\n\n Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Prometheus Collector, written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", os.Args[0])
 		flag.PrintDefaults()
 	}
 	var listen = flag.String("listen", ":9550", "Listen address for metrics")
@@ -300,7 +300,7 @@ func main() {
 			contLen := -1
 			failure := ""
 			ch := "\nContent-Type: text/html; charset=UTF-8"
-			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - All rights reserved; Licensed for Personal Use Only\n\n"
+			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - Licensed for Personal Use Only\n\n"
 			headers := []string{}
 
 			for i := 0; i < buf_size-1; i++ { // Read one charater at a time
