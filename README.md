@@ -15,7 +15,7 @@ Setup the prom-collector at a central location and allow incoming connections to
 ./prom-collector
 ```
 
-If you want to specify a new or change the json output path use
+To specify a new or change the json output (for the proemetheus scrape), use:
 ```
  Usage of ./prom-collector:
   -ca string
