@@ -42,10 +42,13 @@ type Prom struct {
 	LabelMap    map[string]string
 	useEndpoint bool
 	endPoints   chan *reflector
+	lastSeen    string
 }
 type reflector struct {
-	conn  net.Conn
-	close chan int
+	conn      net.Conn
+	close     chan int
+	urlSuffix string
+	urlHost   string
 }
 
 var Proms = map[[16]byte]Prom{}
@@ -206,76 +209,68 @@ func main() {
 
 	go func() {
 		for now := range time.Tick(15 * time.Second) {
-			log.Println(now, "pinging all reflectors")
+			if debug {
+				log.Println(now, "pinging all reflectors")
+			}
 			for _, prom := range Proms {
-				if prom.useEndpoint && len(prom.endPoints) > 0 {
-					pass := make(chan bool, 1)
+				if prom.useEndpoint {
+					count := len(prom.endPoints)
+					for ic := 0; ic < count; ic++ {
+						pass := make(chan bool, 1)
 
-					log.Println("len of endpoints:", len(prom.endPoints))
+						if debug {
+							log.Println("len of endpoints:", len(prom.endPoints))
+						}
 
-					//for i := 0; i < len(prom.endPoints); i++ {
-					//var test_ref *reflector
-					test_ref := <-prom.endPoints
-					if test_ref.conn == nil {
-						continue
-					}
-					go func() {
-						buf := make([]byte, 8)
-						_, err := test_ref.conn.Write([]byte("PING\n"))
-						if err == nil {
-							for j := 0; j < len(buf); j++ {
-								_, err := test_ref.conn.Read(buf[j : j+1])
-								if err != nil {
-									break
-								}
-								if buf[j] == 0xd {
-									j--
-								}
+						//for i := 0; i < len(prom.endPoints); i++ {
+						//var test_ref *reflector
+						test_ref := <-prom.endPoints
+						if test_ref.conn == nil {
+							continue
+						}
+						go func() {
+							buf := make([]byte, 8)
+							_, err := test_ref.conn.Write([]byte("PING\n"))
+							if err == nil {
+								for j := 0; j < len(buf); j++ {
+									_, err := test_ref.conn.Read(buf[j : j+1])
+									if err != nil {
+										break
+									}
+									if buf[j] == 0xd {
+										j--
+									}
 
-								if j >= 4 {
-									//log.Println("read", buf[j-3:j+1])
-									if string(buf[j-4:j+1]) == "PONG\n" {
-										//log.Println("got reply!")
-										prom.endPoints <- test_ref
-										pass <- true
-										return
+									if j >= 4 {
+										//log.Println("read", buf[j-3:j+1])
+										if string(buf[j-4:j+1]) == "PONG\n" {
+											//log.Println("got reply!")
+											prom.endPoints <- test_ref
+											prom.Time = time.Now()
+											prom.lastSeen = test_ref.conn.RemoteAddr().String()
+											pass <- true
+											return
+										}
 									}
 								}
 							}
-						}
-						test_ref.conn.Close()
-						//test_ref.conn = nil
-					}()
-					select {
-					case <-pass:
-					case <-time.After(3 * time.Second):
-						// the read from ch has timed out
-						if test_ref.conn != nil {
 							test_ref.conn.Close()
 							//test_ref.conn = nil
-						}
-					}
-					log.Println("len of endpoints:", len(prom.endPoints))
-					/*
-						if err != nil {
-							break
+						}()
+						select {
+						case <-pass:
+						case <-time.After(3 * time.Second):
+							// the read from ch has timed out
+							if test_ref.conn != nil {
+								test_ref.conn.Close()
+								//test_ref.conn = nil
+							}
 						}
 
-						log.Println("read", buf)
-						if strings.Contains(string(buf), "PONG") {
-							log.Println("restoring reflec")
-							prom.endPoints <- test_ref
-							test_ref = nil
+						if debug {
+							log.Println("len of endpoints:", len(prom.endPoints))
 						}
-						//if test_ref != nil && test_ref.conn != nil {
-						//	test_ref.conn.Close()
-						//}
-						log.Println("len of endpoints:", len(prom.endPoints))
-						if len(holder) == 10 {
-							log.Println("filled")
-							break
-						}
-					*/
+					}
 				}
 			}
 		}
@@ -284,6 +279,7 @@ func main() {
 	defer l.Close()
 	for {
 		conn, err := l.Accept() // Wait for a connection.
+
 		if err != nil {
 			fmt.Println("Error on accept", err)
 			continue
@@ -298,11 +294,14 @@ func main() {
 			buf := make([]byte, buf_size) // simple buffer for incoming requests
 			path := ""
 			method := ""
+			urlSuffix := ""
+			urlHost := ""
 			cont100 := false
 			contLen := -1
 			failure := ""
 			ch := "\nContent-Type: text/html; charset=UTF-8"
-			srv := "\nServer: Prom Reflector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - All rights reserved; Licensed for Personal Use Only\n\n"
+			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - All rights reserved; Licensed for Personal Use Only\n\n"
+			headers := []string{}
 
 			for i := 0; i < buf_size-1; i++ { // Read one charater at a time
 				if _, err := c.Read(buf[i : i+1]); err != nil {
@@ -324,54 +323,118 @@ func main() {
 						} else {
 							failure = "Content-Length missing length value"
 						}
+						headers = append(headers, s)
 					} else if strings.HasPrefix(s, "POST ") || strings.HasPrefix(s, "GET ") || strings.HasPrefix(s, "REFLECT ") {
-						parts := strings.SplitN(s, " ", 3)
+						if debug {
+							log.Println("request: " + s)
+						}
+						parts := strings.SplitN(s, " ", 4)
 						method = parts[0]
-						if len(parts) < 2 || len(parts[1]) < 8 {
+						if len(parts) < 2 { //|| len(parts[1]) < 8 {
+							failure = "Malformed request: " + s
 							break
 						}
 						path = parts[1]
+						if urlPrefix != "" {
+							if strings.HasPrefix(path, urlPrefix+"/") == false {
+								c.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
+								return
+							}
+							path = strings.TrimPrefix(path, urlPrefix)
+						}
+						if parts[0] == "REFLECT" {
+							if len(parts) >= 4 {
+								urlHost = strings.TrimSpace(parts[2])
+								urlSuffix = strings.TrimSpace(parts[3])
+							} else {
+								failure = "Malformed reflect: " + s
+								break
+							}
+						}
+					} else if strings.HasPrefix(s, "Connection: ") {
 					} else if i <= 1 { // end of connect request!
 						break
+					} else {
+						headers = append(headers, s)
 					}
 
 					i = -1 // reset the buffer scanner to 0
 				}
 			}
 			if failure != "" {
+				if debug {
+					log.Println("  failure: " + failure)
+				}
 				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
 				return
 			}
-			if urlPrefix != "" && strings.HasPrefix(path, urlPrefix+"/") == false {
-				c.Write([]byte("HTTP/1.1 302 Please use a slash at the end\nLocation: " + urlPrefix + "/\n\n"))
-				return
-			}
-			path = strings.TrimPrefix(path, urlPrefix)
 
 			// handle the get index for listing endpoints
 			if method == "GET" && (path == "" || path == "/") {
 				var buffer bytes.Buffer
 				buffer.WriteString("<h3>List of endpoints seen:</h3>\n")
 				for _, p := range Proms {
-					buffer.WriteString(fmt.Sprintf("<a href=\"%s\">%v: %v</a><br>\n", p.Path[1:], p.Path[4:], p.LabelSlice))
+					if p.useEndpoint {
+						buffer.WriteString(fmt.Sprintf("<a href=\"%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.lastSeen, p.Time))
+					} else {
+						buffer.WriteString(fmt.Sprintf("<a href=\"%s\">%v: %v</a> - %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.Time))
+					}
 				}
-				s := buffer.String()
-				c.Write([]byte("HTTP/1.1 200 As requested" + cl(s) + ch + srv + s))
+				s := "Prom-Collector" + buffer.String()
+				c.Write([]byte("HTTP/1.1 200 Okay" + cl(s) + ch + srv + s))
+				c.Close()
 				return
 			}
 
 			if method == "GET" {
-				parts := strings.SplitN(path, "/", 3)
-				if len(parts) == 3 && len(parts[2]) == 32 {
+				parts := strings.SplitN(path, "/", 4)
+				if len(parts[1]) == 2 && len(parts[2]) == 32 {
 					hash_buf := make([]byte, 16)
 					hex.Decode(hash_buf, []byte(parts[2]))
 					hash := [16]byte{}
 					copy(hash[:], hash_buf)
 					if p, ok := Proms[hash]; ok {
-						if len(Proms[hash].endPoints) > 0 {
+						if Proms[hash].useEndpoint {
 							if debug {
 								log.Println("Using channel connection for request")
 							}
+							var ref *reflector
+							select {
+							case ref = <-Proms[hash].endPoints:
+							case <-time.After(5 * time.Second):
+								return
+							}
+
+							//ref := <-Proms[hash].endPoints
+							//time.Sleep(10 * time.Second)
+							//if strings.HasSuffix(ref.urlSuffix, "/") && len(path) <= 36 {
+							if len(path) <= 36 || len(parts) < 4 {
+								Proms[hash].endPoints <- ref
+								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + path + "/" + srv))
+								return
+							}
+
+							if debug {
+								log.Println("using reflector", ref)
+							}
+							for i, h := range headers {
+								if strings.HasPrefix(h, "Host: ") {
+									headers[i] = fmt.Sprintf("Host: %s\n", ref.urlHost)
+								}
+							}
+							//headers = append(headers, "Host: "+ref.urlHost)
+							if debug {
+								fmt.Printf("GET " + ref.urlSuffix + parts[3] + " HTTP/1.1\n" + strings.Join(headers, "") + "\n\n")
+							}
+							ref.conn.Write([]byte("GO\nGET " + ref.urlSuffix + parts[3] + " HTTP/1.1\n" + strings.Join(headers, "") + "\n\n"))
+							go io.Copy(c, ref.conn)
+							io.Copy(ref.conn, c)
+							if debug {
+								log.Println("Closing connections")
+							}
+							ref.close <- 1
+							c.Close()
+							return
 						}
 						// If the requested hash exists, print it out
 						f, err := os.Open(basePath + p.Path)
@@ -407,7 +470,7 @@ func main() {
 				}
 			}
 			if failure != "" {
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+				c.Write([]byte("HTTP/1.1 404 Error: " + failure + cl(failure) + srv + failure))
 				return
 			}
 
@@ -445,18 +508,30 @@ func main() {
 
 			// Handle the reflection operation which the struct exists
 			if method == "REFLECT" {
-				ref := &reflector{conn: c}
+				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
 				if p, ok := Proms[prom.Hash]; ok && p.useEndpoint == false {
 					delete(Proms, prom.Hash)
 				}
 				if _, ok := Proms[prom.Hash]; !ok {
 					prom.endPoints = make(chan *reflector, 10)
 					prom.useEndpoint = true
+					prom.lastSeen = conn.RemoteAddr().String()
 					Proms[prom.Hash] = *prom
+				} else {
+					p := Proms[prom.Hash]
+					p.Time = time.Now()
 				}
+				//fmt.Println("New connection from", conn.RemoteAddr())
 				//Proms[prom.Hash].Time = time.Now()
 				Proms[prom.Hash].endPoints <- ref
+				if debug {
+					log.Println("--waiting to close sub connection")
+				}
 				<-ref.close
+				if debug {
+					log.Println("--Closing sub connection")
+				}
+				c.Close()
 				return
 			}
 
