@@ -103,7 +103,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")
-	var target = flag.String("target", "http://localhost/index.html", "Local endpoint for connector")
+	var target = flag.String("target", "http://localhost/", "Local endpoint for connector")
 	var http_proxy = flag.String("http-proxy", "", "Address for establishing connections using http-proxy CONNECT method")
 	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
@@ -260,7 +260,8 @@ func mkChan() {
 	}
 	defer l.Close()
 
-	l.Write([]byte("REFLECT " + url_collector.Path + " " + url_target.Host + " " + url_target.Path + "\n\n"))
+	l.Write([]byte("POST " + url_collector.Path + "\nReflect: " + url_target.Host + " " + url_target.Path +
+		"\nContent-Length: 0\n\n"))
 
 	//pass := make(chan bool, 1)
 	pass := false

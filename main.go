@@ -219,7 +219,7 @@ func main() {
 						pass := make(chan bool, 1)
 
 						if debug {
-							log.Println("len of endpoints:", len(prom.endPoints))
+							log.Println("test started...len of endpoints:", len(prom.endPoints))
 						}
 
 						//for i := 0; i < len(prom.endPoints); i++ {
@@ -268,7 +268,7 @@ func main() {
 						}
 
 						if debug {
-							log.Println("len of endpoints:", len(prom.endPoints))
+							log.Println("finished... len of endpoints:", len(prom.endPoints))
 						}
 					}
 				}
@@ -324,7 +324,7 @@ func main() {
 							failure = "Content-Length missing length value"
 						}
 						headers = append(headers, s)
-					} else if strings.HasPrefix(s, "POST ") || strings.HasPrefix(s, "GET ") || strings.HasPrefix(s, "REFLECT ") {
+					} else if strings.HasPrefix(s, "POST ") || strings.HasPrefix(s, "GET ") {
 						if debug {
 							log.Println("request: " + s)
 						}
@@ -342,16 +342,17 @@ func main() {
 							}
 							path = strings.TrimPrefix(path, urlPrefix)
 						}
-						if parts[0] == "REFLECT" {
-							if len(parts) >= 4 {
-								urlHost = strings.TrimSpace(parts[2])
-								urlSuffix = strings.TrimSpace(parts[3])
-							} else {
-								failure = "Malformed reflect: " + s
-								break
-							}
+					} else if strings.HasPrefix(s, "Reflect: ") {
+						parts := strings.SplitN(s, " ", 4)
+						if len(parts) >= 3 {
+							urlHost = strings.TrimSpace(parts[1])
+							urlSuffix = strings.TrimSpace(parts[2])
+						} else {
+							failure = "Malformed reflect: " + s
+							break
 						}
 					} else if strings.HasPrefix(s, "Connection: ") {
+						headers = append(headers, "Connection: close\n")
 					} else if i <= 1 { // end of connect request!
 						break
 					} else {
@@ -460,10 +461,11 @@ func main() {
 				}
 			}
 
-			if method == "POST" {
-				if path == "" {
-					failure = "Missing path, with target label value pairs"
-				} else if contLen < 0 && failure == "" {
+			if path == "" {
+				failure = "Missing path, with target label value pairs"
+			}
+			if method == "POST" && urlSuffix == "" {
+				if contLen < 0 && failure == "" {
 					failure = "Missing Content-Length header"
 				} else if contLen < 3 && failure == "" {
 					failure = "Content-Length too short for data"
@@ -506,8 +508,8 @@ func main() {
 			prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
 			prom.Path = fmt.Sprintf("/%x/%x", prom.Hash[0], prom.Hash)
 
-			// Handle the reflection operation which the struct exists
-			if method == "REFLECT" {
+			// Handle the incoming reflection satellite connection
+			if urlSuffix != "" {
 				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
 				if p, ok := Proms[prom.Hash]; ok && p.useEndpoint == false {
 					delete(Proms, prom.Hash)
