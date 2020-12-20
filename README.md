@@ -76,3 +76,4 @@ The flags available for prom-satellite are:
         Verify or disable client certificate check, -verify-target=false to ignore SAN (default true)
 ```
 
+If your boxes that need to be monitored are behind a firewall that prevents outgoing connections, you may consider implementing an http-proxy for enabling out going connections.  A good package to look into that does this is https://github.com/pschou/http-proxy .  All the best!
