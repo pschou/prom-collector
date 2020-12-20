@@ -2,8 +2,8 @@
 This app solves the problem of connectivity, say you have a promethues database in a firewall protected area and need to bring the metrics home for doing wholistic system measurements.  Enter Prom-Collector, with the ability to run a prom-satellite at each site and specify the local resource to expose to the promethues collector, you will never need to open another port in a firewall again!
 
 # Why would I care to use this?  Should you need to...
-* Do you need collect metrics behind a firewall and/or network address translator?  No problem!
-* Implemented with the highest SSL standards, to ensure security in metrics transferred, upgrading any http endpoint on th
+* Collect metrics behind a firewall and/or network address translator?  No problem!
+* Implement the highest SSL standards for site to site monitoring, to ensure security in metrics transferred, upgrading any http endpoint on th
 * Inter-connect IPv4 to IPv6 or vice versa, no limitation of port forwarding to which IP implementation used
 * Upgrade a client to a newer version of TLS or enable TLS on an app without TLS support - point the app to this app configured as an HTTP endpoint and outgoing becomes TLS
 * Fix MTU issues across network boundary / boundaries - repackage the packets on the fly without the client needing to "find" the correct MTU, allow the network interface to dictate this
