@@ -47,6 +47,7 @@ var verifyTarget bool
 var uHost = ""
 var tHost = ""
 var httpProxy = ""
+var method = "GET"
 
 var openCh = make(chan int, 3)
 var closeCh = make(chan int, 1)
@@ -105,7 +106,8 @@ func main() {
 		flag.PrintDefaults()
 	}
 	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")
-	var target = flag.String("target", "http://localhost/", "Local endpoint for connector")
+	var Method = flag.String("method", method, "Method to use to connect to collector")
+	var target = flag.String("target", "http://localhost/", "Local endpoint to tunnel the collector to")
 	var http_proxy = flag.String("http-proxy", "", "host for establishing connections to prom-collector")
 	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
@@ -122,6 +124,7 @@ func main() {
 	var err error
 	debug = *verbose
 
+	method = *Method
 	keyFile = *key_file
 	certFile = *cert_file
 	rootFile = *root_file
@@ -226,7 +229,7 @@ func mkChan() {
 			return
 		}
 		lc.Write([]byte("CONNECT " + uHost + " HTTP/1.1\n\n"))
-		buf := make([]byte, 24)
+		buf := make([]byte, 50)
 		for j := 0; j < len(buf); j++ {
 			_, err := lc.Read(buf[j : j+1])
 			if err != nil {
@@ -313,13 +316,13 @@ func mkChan() {
 	}
 	defer l.Close()
 
-	l.Write([]byte("POST " + url_collector.Path + "\nReflect: " + url_target.Host + " " + url_target.Path +
-		"\nContent-Length: 0\n\n"))
+	l.Write([]byte(method + " " + url_collector.Path + " HTTP/1.1\nReflect: " + url_target.Host + " " + url_target.Path +
+		"\nUser-Agent: Reflector\nHost: " + uHost + "\nContent-Length: 0\n\n"))
 
 	//pass := make(chan bool, 1)
 	pass := false
 	//func() {
-	buf := make([]byte, 24)
+	buf := make([]byte, 50)
 	for j := 0; j < len(buf); j++ {
 		_, err := l.Read(buf[j : j+1])
 		if err != nil {

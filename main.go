@@ -13,6 +13,7 @@ import (
 	//"encoding/json"
 	"bufio"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
@@ -41,9 +42,9 @@ type Prom struct {
 	TimeStr     string
 	LabelSlice  []string
 	LabelMap    map[string]string
-	useEndpoint bool
+	UseEndpoint bool
 	endPoints   chan *reflector
-	lastSeen    string
+	LastSeen    string
 }
 type reflector struct {
 	conn      net.Conn
@@ -126,7 +127,9 @@ func main() {
 	var tls_enabled = flag.Bool("tls", false, "Enable listener TLS (enable with -tls=true)")
 	var verbose = flag.Bool("debug", false, "Verbose output")
 	var basepath = flag.String("path", basePath, "Path into which to put the prometheus data")
-	var jsonpath = flag.String("json", jsonPath, "Path into which to put the prometheus json endpoints for polling")
+	var jsonpath = flag.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling")
+	//var jsonstatic_path = flag.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
+	//var jsonstatic_path = flag.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	flag.Parse()
 
 	//var err error
@@ -215,7 +218,7 @@ func main() {
 				log.Println(now, "pinging all reflectors")
 			}
 			for _, prom := range Proms {
-				if prom.useEndpoint {
+				if prom.UseEndpoint {
 					count := len(prom.endPoints)
 					for ic := 0; ic < count; ic++ {
 						pass := make(chan bool, 1)
@@ -249,7 +252,7 @@ func main() {
 											//log.Println("got reply!")
 											prom.endPoints <- test_ref
 											prom.Time = time.Now()
-											prom.lastSeen = test_ref.conn.RemoteAddr().String()
+											prom.LastSeen = test_ref.conn.RemoteAddr().String()
 											pass <- true
 											return
 										}
@@ -311,6 +314,9 @@ func main() {
 				}
 				if buf[i] == 0xa { // New line to parse...
 					s := string(buf[0 : i+1])
+					//if debug {
+					//	log.Println("header: ", s)
+					//}
 					if strings.HasPrefix(s, "Expect: 100") {
 						cont100 = true
 					} else if strings.HasPrefix(s, "Content-Length: ") {
@@ -367,21 +373,36 @@ func main() {
 			}
 			path = strings.TrimSpace(path)
 
-			if failure != "" {
-				if debug {
-					log.Println("  failure: " + failure)
+			if path == "" {
+				failure = "Missing path, with target label value pairs"
+			}
+			if method == "POST" && urlHost == "" {
+				if contLen < 0 && failure == "" {
+					failure = "Missing Content-Length header"
+				} else if contLen < 3 && failure == "" {
+					failure = "Content-Length too short for data"
 				}
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+			}
+			if failure != "" {
+				c.Write([]byte("HTTP/1.1 404 Error: " + failure + cl(failure) + srv + failure))
 				return
 			}
+
+			//			if failure != "" {
+			//				if debug {
+			//					log.Println("  failure: " + failure)
+			//				}
+			//				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+			//				return
+			//			}
 
 			// handle the get index for listing endpoints
 			if method == "GET" && (path == "" || path == "/") {
 				var buffer bytes.Buffer
 				buffer.WriteString("<h3>List of endpoints seen:</h3>\n")
 				for _, p := range Proms {
-					if p.useEndpoint {
-						buffer.WriteString(fmt.Sprintf("<a href=\"%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.lastSeen, p.Time))
+					if p.UseEndpoint {
+						buffer.WriteString(fmt.Sprintf("<a href=\"%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.LastSeen, p.Time))
 					} else {
 						buffer.WriteString(fmt.Sprintf("<a href=\"%s\">%v: %v</a> - %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.Time))
 					}
@@ -392,6 +413,73 @@ func main() {
 				return
 			}
 
+			prom := &Prom{Time: time.Now(), LabelSlice: []string{}, LabelMap: make(map[string]string), UseEndpoint: false, OrigPath: path}
+			prom.TimeStr = fmt.Sprintf("%v", prom.Time.UnixNano()/1e6)
+			parts := strings.Split(strings.Trim(path[1:], "/ \r\t"), "/")
+			if len(parts)%2 != 0 && failure == "" {
+				failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
+			} else {
+				for i := 0; i < len(parts); i = i + 2 {
+					if check_label_name(parts[i]) == false || parts[i] == "" {
+						failure = "Error label \"" + parts[i] + "\" in path must have valid prometheus label name"
+						break
+					}
+					lbl := strings.TrimSpace(parts[i])
+					val, err := url.QueryUnescape(strings.TrimSpace(parts[i+1]))
+					if err != nil {
+						failure = "Error while parsing label value in url \"" + parts[i+1] + "\""
+						break
+					}
+					prom.LabelMap[lbl] = val
+					prom.LabelSlice = append(prom.LabelSlice, fmt.Sprintf("%s=%s", lbl, fmt.Sprintf("%q", val)))
+				}
+			}
+			if failure != "" {
+				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+				return
+			}
+			sort.Strings(prom.LabelSlice)
+			prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
+			prom.Path = fmt.Sprintf("/%02x/%x", prom.Hash[0], prom.Hash)
+
+			// Handle the incoming reflection satellite connection
+			if urlHost != "" {
+				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
+				PromsLock.Lock()
+				if p, ok := Proms[prom.Hash]; ok && p.UseEndpoint == false {
+					delete(Proms, prom.Hash)
+				}
+				if _, ok := Proms[prom.Hash]; !ok {
+					prom.endPoints = make(chan *reflector, 10)
+					prom.UseEndpoint = true
+					prom.LastSeen = conn.RemoteAddr().String()
+					Proms[prom.Hash] = *prom
+				} else {
+					p := Proms[prom.Hash]
+					p.Time = time.Now()
+				}
+				PromsLock.Unlock()
+				createJson()
+				//fmt.Println("New connection from", conn.RemoteAddr())
+				//Proms[prom.Hash].Time = time.Now()
+				Proms[prom.Hash].endPoints <- ref
+				if debug {
+					log.Println("--waiting to close sub connection")
+				}
+				<-ref.close
+				if debug {
+					log.Println("--Closing sub connection")
+				}
+				c.Close()
+				return
+			}
+
+			if failure != "" {
+				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+				return
+			}
+
+			// handle the get method for returning results to the prometheus client
 			if method == "GET" {
 				for _, p := range Proms {
 					if debug {
@@ -402,12 +490,12 @@ func main() {
 						//if debug {
 						//	log.Println("using map value for path redirect", path, "->", p.Path)
 						//}
-						if p.useEndpoint {
+						if p.UseEndpoint {
 							c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + p.Path + "/" + srv))
 							return
 						}
 						/*path = p.Path
-						if p.useEndpoint {
+						if p.UseEndpoint {
 							path = path + "/"
 						}*/
 					}
@@ -428,7 +516,7 @@ func main() {
 								return
 							}
 						}
-						if Proms[hash].useEndpoint {
+						if Proms[hash].UseEndpoint {
 							if debug {
 								log.Println("Using channel connection for request")
 							}
@@ -499,97 +587,21 @@ func main() {
 				}
 			}
 
-			if path == "" {
-				failure = "Missing path, with target label value pairs"
-			}
-			if method == "POST" && urlHost == "" {
-				if contLen < 0 && failure == "" {
-					failure = "Missing Content-Length header"
-				} else if contLen < 3 && failure == "" {
-					failure = "Content-Length too short for data"
-				}
-			}
-			if failure != "" {
-				c.Write([]byte("HTTP/1.1 404 Error: " + failure + cl(failure) + srv + failure))
-				return
-			}
-
-			prom := &Prom{Time: time.Now(), LabelSlice: []string{}, LabelMap: make(map[string]string), useEndpoint: false, OrigPath: path}
-			prom.TimeStr = fmt.Sprintf("%v", prom.Time.UnixNano()/1e6)
-			parts := strings.Split(strings.Trim(path[1:], "/ \r\t"), "/")
-			if len(parts)%2 != 0 && failure == "" {
-				failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
-			} else {
-				for i := 0; i < len(parts); i = i + 2 {
-					if check_label_name(parts[i]) == false || parts[i] == "" {
-						failure = "Error label \"" + parts[i] + "\" in path must have valid prometheus label name"
-						break
-					}
-					lbl := strings.TrimSpace(parts[i])
-					val, err := url.QueryUnescape(strings.TrimSpace(parts[i+1]))
-					if err != nil {
-						failure = "Error while parsing label value in url \"" + parts[i+1] + "\""
-						break
-					}
-					prom.LabelMap[lbl] = val
-					prom.LabelSlice = append(prom.LabelSlice, fmt.Sprintf("%s=%s", lbl, fmt.Sprintf("%q", val)))
-				}
-			}
-			if failure != "" {
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
-				return
-			}
-			sort.Strings(prom.LabelSlice)
-			prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
-			prom.Path = fmt.Sprintf("/%x/%x", prom.Hash[0], prom.Hash)
-
-			// Handle the incoming reflection satellite connection
-			if urlHost != "" {
-				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
-				PromsLock.Lock()
-				if p, ok := Proms[prom.Hash]; ok && p.useEndpoint == false {
-					delete(Proms, prom.Hash)
-				}
-				if _, ok := Proms[prom.Hash]; !ok {
-					prom.endPoints = make(chan *reflector, 10)
-					prom.useEndpoint = true
-					prom.lastSeen = conn.RemoteAddr().String()
-					Proms[prom.Hash] = *prom
-				} else {
-					p := Proms[prom.Hash]
-					p.Time = time.Now()
-				}
-				PromsLock.Unlock()
-				//fmt.Println("New connection from", conn.RemoteAddr())
-				//Proms[prom.Hash].Time = time.Now()
-				Proms[prom.Hash].endPoints <- ref
-				if debug {
-					log.Println("--waiting to close sub connection")
-				}
-				<-ref.close
-				if debug {
-					log.Println("--Closing sub connection")
-				}
-				c.Close()
-				return
-			}
-
-			if failure != "" {
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
-				return
-			}
-
 			// handle the post method
 			if method == "POST" {
 				prom.Size = contLen
+				_, promExists := Proms[prom.Hash]
 				PromsLock.Lock()
 				Proms[prom.Hash] = *prom
 				PromsLock.Unlock()
+				if !promExists {
+					go createJson()
+				}
 				if cont100 {
 					c.Write([]byte("HTTP/1.1 100 Continue, my friend\n\n"))
 				}
 
-				os.Mkdir(fmt.Sprintf("%s/%x", basePath, prom.Hash[0]), 0755)
+				os.Mkdir(fmt.Sprintf("%s/%02x", basePath, prom.Hash[0]), 0755)
 				if debug {
 					log.Println("creating file", basePath+prom.Path)
 				}
@@ -601,7 +613,7 @@ func main() {
 				defer f.Close()
 
 				w := bufio.NewWriter(f)
-				//fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
+				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
 				//fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
 
 				i := contLen
@@ -647,26 +659,39 @@ func main() {
 				w.Flush()
 				c.Write([]byte("HTTP/1.1 200 Go, and do what is right" + srv))
 
-				jf, err := os.Create(jsonPath)
-				if err != nil {
-					log.Println("Error: could not create json file", jsonPath)
-					return
-				}
-				jw := bufio.NewWriter(jf)
-				tgts := []string{}
-				for _, p := range Proms {
-					lbls := []string{}
-					for l, v := range p.LabelMap {
-						lbls = append(lbls, fmt.Sprintf("%q:%q", l, v))
-					}
-					tgts = append(tgts, fmt.Sprintf("{\"labels\":{%s},\"targets\": [%q]}", strings.Join(lbls, ","), p.Path))
-				}
-				fmt.Fprintf(jw, "[%s]", strings.Join(tgts, ","))
-				jw.Flush()
-				defer jf.Close()
 			}
 		}(conn)
 	}
+}
+
+var jsonLock sync.Mutex
+
+func createJson() {
+	jsonLock.Lock()
+	jf, err := os.Create(jsonPath)
+	if err != nil {
+		log.Println("Error: could not create json file", jsonPath)
+		return
+	}
+	jw := bufio.NewWriter(jf)
+	tgts := []string{}
+	for _, p := range Proms {
+		//lbls := []string{}
+		//for l, v := range p.LabelMap {
+		//	lbls = append(lbls, fmt.Sprintf("%q:%q", l, v))
+		//}
+		jsonString, _ := json.Marshal(p.LabelMap)
+		//tgts = append(tgts, fmt.Sprintf("{\"labels\":{%s},\"targets\": [%q]}", strings.Join(lbls, ","), p.Path))
+		slash := ""
+		if p.UseEndpoint {
+			slash = "/"
+		}
+		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, p.Path+slash))
+	}
+	fmt.Fprintf(jw, "[%s]", strings.Join(tgts, ","))
+	jw.Flush()
+	defer jf.Close()
+	jsonLock.Unlock()
 }
 
 func LoadCertficatesFromFile(path string) error {
