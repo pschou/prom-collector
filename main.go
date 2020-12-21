@@ -34,6 +34,7 @@ import (
 
 type Prom struct {
 	Path        string
+	OrigPath    string
 	Hash        [16]byte
 	Size        int
 	Time        time.Time
@@ -364,6 +365,7 @@ func main() {
 				}
 				path = strings.TrimPrefix(path, urlPrefix)
 			}
+			path = strings.TrimSpace(path)
 
 			if failure != "" {
 				if debug {
@@ -391,6 +393,25 @@ func main() {
 			}
 
 			if method == "GET" {
+				for _, p := range Proms {
+					if debug {
+						log.Println("comparing value for path redirect", path, "->", p.OrigPath)
+						//	log.Println("comparing value for path redirect", []byte(path), "->", []byte(p.OrigPath))
+					}
+					if p.OrigPath == strings.TrimRight(path, "/") {
+						//if debug {
+						//	log.Println("using map value for path redirect", path, "->", p.Path)
+						//}
+						if p.useEndpoint {
+							c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + p.Path + "/" + srv))
+							return
+						}
+						/*path = p.Path
+						if p.useEndpoint {
+							path = path + "/"
+						}*/
+					}
+				}
 				parts := strings.SplitN(path, "/", 4)
 				if len(parts) > 2 && len(parts[1]) == 2 && len(parts[2]) == 32 {
 					hash_buf := make([]byte, 16)
@@ -411,17 +432,24 @@ func main() {
 							if debug {
 								log.Println("Using channel connection for request")
 							}
-							var ref *reflector
-							select {
-							case ref = <-Proms[hash].endPoints:
-							case <-time.After(10 * time.Second):
+
+							if len(path) <= 36 || len(parts) < 4 {
+								//Proms[hash].endPoints <- ref
+								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + path + "/" + srv))
 								return
 							}
 
-							if len(path) <= 36 || len(parts) < 4 {
-								Proms[hash].endPoints <- ref
-								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + path + "/" + srv))
-								return
+							var ref *reflector
+
+							for ref == nil || ref.conn == nil || ref.conn.RemoteAddr() == nil {
+								if debug {
+									log.Println("  read off reflector")
+								}
+								select {
+								case ref = <-Proms[hash].endPoints:
+								case <-time.After(10 * time.Second):
+									return
+								}
 							}
 
 							if debug {
@@ -486,11 +514,8 @@ func main() {
 				return
 			}
 
-			prom := &Prom{Time: time.Now(), LabelSlice: []string{}, LabelMap: make(map[string]string), useEndpoint: false}
-			//prom.Time = time.Now()
+			prom := &Prom{Time: time.Now(), LabelSlice: []string{}, LabelMap: make(map[string]string), useEndpoint: false, OrigPath: path}
 			prom.TimeStr = fmt.Sprintf("%v", prom.Time.UnixNano()/1e6)
-			//prom.LabelSlice = []string{}
-			//prom.LabelMap = make(map[string]string)
 			parts := strings.Split(strings.Trim(path[1:], "/ \r\t"), "/")
 			if len(parts)%2 != 0 && failure == "" {
 				failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
