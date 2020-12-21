@@ -3,6 +3,7 @@ This app solves the problem of connectivity, say you have a promethues database 
 
 # Why would I care to use this?  Should you need to...
 * Collect metrics behind a firewall and/or network address translator?  No problem!
+* Monitor the infrastructure behind a one-way http-proxy with no connections going in to said infrastructure, even with outgoing port blocks, SNI limits, and TCP session timeouts
 * Implement the highest SSL standards for site to site monitoring, to ensure security in metrics transferred, upgrading any http endpoint
 * Inter-connect IPv4 to IPv6 or vice versa, no limitation of port forwarding to which IP implementation used
 * Upgrade a client to a newer version of TLS or enable TLS on an app without TLS support - point the app to this app configured as an HTTP endpoint and outgoing becomes TLS
