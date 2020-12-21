@@ -52,6 +52,7 @@ type reflector struct {
 }
 
 var Proms = map[[16]byte]Prom{}
+var PromsLock sync.Mutex
 
 var urlPrefix = ""
 var keyFile = ""
@@ -335,13 +336,6 @@ func main() {
 							break
 						}
 						path = parts[1]
-						if urlPrefix != "" {
-							if strings.HasPrefix(path, urlPrefix+"/") == false {
-								c.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
-								return
-							}
-							path = strings.TrimPrefix(path, urlPrefix)
-						}
 					} else if strings.HasPrefix(s, "Reflect: ") {
 						parts := strings.SplitN(s, " ", 4)
 						if len(parts) >= 3 {
@@ -362,6 +356,15 @@ func main() {
 					i = -1 // reset the buffer scanner to 0
 				}
 			}
+
+			if urlPrefix != "" {
+				if urlHost == "" && strings.HasPrefix(path, urlPrefix+"/") == false {
+					c.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
+					return
+				}
+				path = strings.TrimPrefix(path, urlPrefix)
+			}
+
 			if failure != "" {
 				if debug {
 					log.Println("  failure: " + failure)
@@ -389,12 +392,21 @@ func main() {
 
 			if method == "GET" {
 				parts := strings.SplitN(path, "/", 4)
-				if len(parts[1]) == 2 && len(parts[2]) == 32 {
+				if len(parts) > 2 && len(parts[1]) == 2 && len(parts[2]) == 32 {
 					hash_buf := make([]byte, 16)
 					hex.Decode(hash_buf, []byte(parts[2]))
 					hash := [16]byte{}
 					copy(hash[:], hash_buf)
-					if p, ok := Proms[hash]; ok {
+					if len(parts) > 3 {
+						for _, ok := Proms[hash]; !ok; _, ok = Proms[hash] {
+							if debug {
+								log.Println("Waiting for endpoint to become available")
+							}
+							time.Sleep(2 * time.Second)
+							if c.RemoteAddr() == nil {
+								return
+							}
+						}
 						if Proms[hash].useEndpoint {
 							if debug {
 								log.Println("Using channel connection for request")
@@ -402,13 +414,10 @@ func main() {
 							var ref *reflector
 							select {
 							case ref = <-Proms[hash].endPoints:
-							case <-time.After(5 * time.Second):
+							case <-time.After(10 * time.Second):
 								return
 							}
 
-							//ref := <-Proms[hash].endPoints
-							//time.Sleep(10 * time.Second)
-							//if strings.HasSuffix(ref.urlSuffix, "/") && len(path) <= 36 {
 							if len(path) <= 36 || len(parts) < 4 {
 								Proms[hash].endPoints <- ref
 								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + path + "/" + srv))
@@ -437,8 +446,9 @@ func main() {
 							c.Close()
 							return
 						}
+					} else {
 						// If the requested hash exists, print it out
-						f, err := os.Open(basePath + p.Path)
+						f, err := os.Open(basePath + Proms[hash].Path)
 						if err == nil {
 							defer f.Close()
 							fi, err := f.Stat()
@@ -452,9 +462,9 @@ func main() {
 							}
 						} else {
 							failure = "Error opening metric for reading"
-						}
-					} else {
-						failure = "Metric missing " + path
+						} //else {
+						//	failure = "Metric missing " + path
+						//}
 					}
 				} else {
 					failure = "Metric missing " + path
@@ -464,7 +474,7 @@ func main() {
 			if path == "" {
 				failure = "Missing path, with target label value pairs"
 			}
-			if method == "POST" && urlSuffix == "" {
+			if method == "POST" && urlHost == "" {
 				if contLen < 0 && failure == "" {
 					failure = "Missing Content-Length header"
 				} else if contLen < 3 && failure == "" {
@@ -509,8 +519,9 @@ func main() {
 			prom.Path = fmt.Sprintf("/%x/%x", prom.Hash[0], prom.Hash)
 
 			// Handle the incoming reflection satellite connection
-			if urlSuffix != "" {
+			if urlHost != "" {
 				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
+				PromsLock.Lock()
 				if p, ok := Proms[prom.Hash]; ok && p.useEndpoint == false {
 					delete(Proms, prom.Hash)
 				}
@@ -523,6 +534,7 @@ func main() {
 					p := Proms[prom.Hash]
 					p.Time = time.Now()
 				}
+				PromsLock.Unlock()
 				//fmt.Println("New connection from", conn.RemoteAddr())
 				//Proms[prom.Hash].Time = time.Now()
 				Proms[prom.Hash].endPoints <- ref
@@ -545,12 +557,17 @@ func main() {
 			// handle the post method
 			if method == "POST" {
 				prom.Size = contLen
+				PromsLock.Lock()
 				Proms[prom.Hash] = *prom
+				PromsLock.Unlock()
 				if cont100 {
-					c.Write([]byte("HTTP/1.1 100 Continue thy ordinances\n\n"))
+					c.Write([]byte("HTTP/1.1 100 Continue, my friend\n\n"))
 				}
 
 				os.Mkdir(fmt.Sprintf("%s/%x", basePath, prom.Hash[0]), 0755)
+				if debug {
+					log.Println("creating file", basePath+prom.Path)
+				}
 				f, err := os.Create(basePath + prom.Path)
 				if err != nil {
 					log.Println("could not create file", basePath+prom.Path)
@@ -559,8 +576,8 @@ func main() {
 				defer f.Close()
 
 				w := bufio.NewWriter(f)
-				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
-				fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
+				//fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
+				//fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
 
 				i := contLen
 				for j := 0; i > 0; j++ {

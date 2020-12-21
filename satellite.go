@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -45,6 +46,7 @@ var verifyCollector bool
 var verifyTarget bool
 var uHost = ""
 var tHost = ""
+var httpProxy = ""
 
 var openCh = make(chan int, 3)
 var closeCh = make(chan int, 1)
@@ -104,7 +106,7 @@ func main() {
 	}
 	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")
 	var target = flag.String("target", "http://localhost/", "Local endpoint for connector")
-	var http_proxy = flag.String("http-proxy", "", "Address for establishing connections using http-proxy CONNECT method")
+	var http_proxy = flag.String("http-proxy", "", "host for establishing connections to prom-collector")
 	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
 	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
@@ -129,6 +131,7 @@ func main() {
 	secureTarget = *secure_target
 	secureCollector = *secure_collector
 	threads = *in_threads
+	httpProxy = *http_proxy
 	if debug {
 		if *http_proxy != "" {
 			log.Println("using http-proxy")
@@ -200,6 +203,9 @@ func main() {
 				mkChan()
 				<-openCh
 				closeCh <- 1
+				if debug {
+					fmt.Println("chan closed")
+				}
 			}()
 		} else {
 			<-closeCh
@@ -208,7 +214,58 @@ func main() {
 }
 func mkChan() {
 	var l net.Conn
+	var lc net.Conn
 	var err error
+	if httpProxy != "" {
+		if debug {
+			fmt.Println("Proxy dialing ", uHost, "through", httpProxy)
+		}
+		if lc, err = net.Dial("tcp", httpProxy); err != nil {
+			log.Println("Could not connect to proxy", err)
+			backoff = true
+			return
+		}
+		lc.Write([]byte("CONNECT " + uHost + " HTTP/1.1\n\n"))
+		buf := make([]byte, 24)
+		for j := 0; j < len(buf); j++ {
+			_, err := lc.Read(buf[j : j+1])
+			if err != nil {
+				return
+			}
+			if buf[j] == 0xd {
+				j--
+			}
+			if buf[j] == 0xa {
+				if strings.HasPrefix(string(buf[0:j]), "HTTP/1.1 200") {
+					if debug {
+						log.Println("proxy returned 200")
+					}
+					break
+				} else {
+					log.Println("Proxy CONNECT command failed")
+					return
+				}
+			}
+		}
+		for j := 0; j < len(buf); j++ {
+			_, err := lc.Read(buf[j : j+1])
+			if err != nil {
+				return
+			}
+			if buf[j] == 0xa {
+				break
+			}
+		}
+	} else {
+		if debug {
+			fmt.Println("Dialing ", uHost)
+		}
+		if lc, err = net.Dial("tcp", uHost); err != nil {
+			log.Println("Error dialing", err)
+			backoff = true
+			return
+		}
+	}
 	if url_collector.Scheme == "https" {
 		var config tls.Config
 		if secureCollector {
@@ -240,21 +297,17 @@ func mkChan() {
 		if debug {
 			fmt.Println("TLS Dialing ", uHost)
 		}
-		if l, err = tls.Dial("tcp", uHost, &config); err != nil {
-			log.Println(err)
+		t := tls.Client(lc, &config)
+		err = t.Handshake()
+		if err != nil {
+			log.Println("Error during handshake", err)
 			backoff = true
 			return
 		}
+		l = t
 	} else if url_collector.Scheme == "http" {
-		var err error
-		if debug {
-			fmt.Println("Dialing ", uHost)
-		}
-		if l, err = net.Dial("tcp", uHost); err != nil {
-			log.Println(err)
-			backoff = true
-			return
-		}
+		// we're already in the state we need the connection to be in
+		l = lc
 	} else {
 		log.Fatal("Unknown URL scheme: " + url_collector.Scheme)
 	}
@@ -266,7 +319,7 @@ func mkChan() {
 	//pass := make(chan bool, 1)
 	pass := false
 	//func() {
-	buf := make([]byte, 8)
+	buf := make([]byte, 24)
 	for j := 0; j < len(buf); j++ {
 		_, err := l.Read(buf[j : j+1])
 		if err != nil {
@@ -298,6 +351,9 @@ func mkChan() {
 				j = 0
 			}
 		}
+	}
+	if debug {
+		log.Println("buf", buf, string(buf))
 	}
 	//pass <- false
 	//}()
@@ -361,14 +417,13 @@ func mkChan() {
 		defer tc.Close()
 
 		if debug {
-			log.Println("dialing endpoint:", target_addr)
+			log.Println("connecting endpoints:", target_addr)
 		}
-		if debug {
-			log.Println("connected!", target_addr)
-		}
-
 		go io.Copy(l, tc)
 		io.Copy(tc, l)
+		if debug {
+			log.Println("closed", target_addr)
+		}
 	}
 }
 
