@@ -27,6 +27,7 @@ type DNS struct {
 	Time time.Time
 }
 
+var version = "0.1"
 var target_addr = ""
 var DNSCache = make(map[string]DNS, 0)
 var keyFile = ""
@@ -102,7 +103,7 @@ func loadKeys() {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Prometheus Satellite Utility, written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Prometheus Satellite (%s), written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", version, os.Args[0])
 		flag.PrintDefaults()
 	}
 	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")

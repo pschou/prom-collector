@@ -56,6 +56,7 @@ type reflector struct {
 var Proms = map[[16]byte]Prom{}
 var PromsLock sync.Mutex
 
+var version = "0.1"
 var urlPrefix = ""
 var keyFile = ""
 var certFile = ""
@@ -114,7 +115,7 @@ func loadKeys() {
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Prometheus Collector, written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Prometheus Collector (%s), written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", version, os.Args[0])
 		flag.PrintDefaults()
 	}
 	var listen = flag.String("listen", ":9550", "Listen address for metrics")
