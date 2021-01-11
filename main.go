@@ -214,11 +214,18 @@ func main() {
 	}
 
 	go func() {
-		for now := range time.Tick(15 * time.Second) {
+		for now := range time.Tick(40 * time.Second) {
+			createJson()
 			if debug {
 				log.Println(now, "pinging all reflectors")
 			}
+			PromsArr := make([]Prom, 0)
+			PromsLock.Lock()
 			for _, prom := range Proms {
+				PromsArr = append(PromsArr, prom)
+			}
+			PromsLock.Unlock()
+			for _, prom := range PromsArr {
 				if prom.UseEndpoint {
 					count := len(prom.endPoints)
 					for ic := 0; ic < count; ic++ {
@@ -234,8 +241,11 @@ func main() {
 						if test_ref.conn == nil {
 							continue
 						}
+						if debug {
+							log.Println("  ping:", prom.Path)
+						}
 						go func() {
-							buf := make([]byte, 8)
+							buf := make([]byte, 50)
 							_, err := test_ref.conn.Write([]byte("PING\n"))
 							if err == nil {
 								for j := 0; j < len(buf); j++ {
@@ -265,8 +275,15 @@ func main() {
 						}()
 						select {
 						case <-pass:
+							if debug {
+								log.Println("  YES pong:", prom.Path)
+							}
 						case <-time.After(3 * time.Second):
 							// the read from ch has timed out
+							if debug {
+								log.Println("  NO pong:", prom.Path)
+							}
+
 							if test_ref.conn != nil {
 								test_ref.conn.Close()
 								//test_ref.conn = nil
@@ -309,6 +326,7 @@ func main() {
 			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - Licensed for Personal Use Only\n\n"
 			headers := []string{}
 
+			// read input until emtpy line (http header ending)
 			for i := 0; i < buf_size-1; i++ { // Read one charater at a time
 				if _, err := c.Read(buf[i : i+1]); err != nil {
 					break
@@ -365,6 +383,12 @@ func main() {
 				}
 			}
 
+			// we need a path
+			if path == "" {
+				failure = "Missing path, with target label value pairs"
+			}
+
+			// print out any errors
 			if urlPrefix != "" {
 				if urlHost == "" && strings.HasPrefix(path, urlPrefix+"/") == false {
 					c.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
@@ -374,9 +398,7 @@ func main() {
 			}
 			path = strings.TrimSpace(path)
 
-			if path == "" {
-				failure = "Missing path, with target label value pairs"
-			}
+			// make sure any POST request comes with the content-length for reading
 			if method == "POST" && urlHost == "" {
 				if contLen < 0 && failure == "" {
 					failure = "Missing Content-Length header"
@@ -397,15 +419,21 @@ func main() {
 			//				return
 			//			}
 
-			// handle the get index for listing endpoints
+			// get the index and list endpoints
 			if method == "GET" && (path == "" || path == "/") {
 				var buffer bytes.Buffer
 				buffer.WriteString("<h3>List of endpoints seen:</h3>\n")
-				for _, p := range Proms {
+				PromsArr := make([]Prom, 0)
+				PromsLock.Lock()
+				for _, prom := range Proms {
+					PromsArr = append(PromsArr, prom)
+				}
+				PromsLock.Unlock()
+				for _, p := range PromsArr {
 					if p.UseEndpoint {
-						buffer.WriteString(fmt.Sprintf("<a href=\"%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.LastSeen, p.Time))
+						buffer.WriteString(fmt.Sprintf("<a href=\"-%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.LastSeen, p.Time))
 					} else {
-						buffer.WriteString(fmt.Sprintf("<a href=\"%s\">%v: %v</a> - %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.Time))
+						buffer.WriteString(fmt.Sprintf("<a href=\"-%s\">%v: %v</a> - %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.Time))
 					}
 				}
 				s := "Prom-Collector" + buffer.String()
@@ -414,34 +442,42 @@ func main() {
 				return
 			}
 
+			// break out the path and build up the hash
 			prom := &Prom{Time: time.Now(), LabelSlice: []string{}, LabelMap: make(map[string]string), UseEndpoint: false, OrigPath: path}
 			prom.TimeStr = fmt.Sprintf("%v", prom.Time.UnixNano()/1e6)
 			parts := strings.Split(strings.Trim(path[1:], "/ \r\t"), "/")
-			if len(parts)%2 != 0 && failure == "" {
-				failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
-			} else {
-				for i := 0; i < len(parts); i = i + 2 {
-					if check_label_name(parts[i]) == false || parts[i] == "" {
-						failure = "Error label \"" + parts[i] + "\" in path must have valid prometheus label name"
-						break
+			hash_url := false // assume not hash address then test if it is
+			if len(parts) > 1 && len(parts[0]) == 3 && len(parts[1]) == 32 && parts[0][0] == '-' {
+				hash_url = true
+			}
+
+			if !hash_url {
+				if len(parts)%2 != 0 && failure == "" {
+					failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
+				} else {
+					for i := 0; i < len(parts); i = i + 2 {
+						if check_label_name(parts[i]) == false || parts[i] == "" {
+							failure = "Error label \"" + parts[i] + "\" in path must have valid prometheus label name"
+							break
+						}
+						lbl := strings.TrimSpace(parts[i])
+						val, err := url.QueryUnescape(strings.TrimSpace(parts[i+1]))
+						if err != nil {
+							failure = "Error while parsing label value in url \"" + parts[i+1] + "\""
+							break
+						}
+						prom.LabelMap[lbl] = val
+						prom.LabelSlice = append(prom.LabelSlice, fmt.Sprintf("%s=%s", lbl, fmt.Sprintf("%q", val)))
 					}
-					lbl := strings.TrimSpace(parts[i])
-					val, err := url.QueryUnescape(strings.TrimSpace(parts[i+1]))
-					if err != nil {
-						failure = "Error while parsing label value in url \"" + parts[i+1] + "\""
-						break
-					}
-					prom.LabelMap[lbl] = val
-					prom.LabelSlice = append(prom.LabelSlice, fmt.Sprintf("%s=%s", lbl, fmt.Sprintf("%q", val)))
 				}
+				if failure != "" {
+					c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+					return
+				}
+				sort.Strings(prom.LabelSlice)
+				prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
+				prom.Path = fmt.Sprintf("/%02x/%x", prom.Hash[0], prom.Hash)
 			}
-			if failure != "" {
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
-				return
-			}
-			sort.Strings(prom.LabelSlice)
-			prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
-			prom.Path = fmt.Sprintf("/%02x/%x", prom.Hash[0], prom.Hash)
 
 			// Handle the incoming reflection satellite connection
 			if urlHost != "" {
@@ -459,11 +495,11 @@ func main() {
 					p := Proms[prom.Hash]
 					p.Time = time.Now()
 				}
-				PromsLock.Unlock()
-				createJson()
+				//createJson()
 				//fmt.Println("New connection from", conn.RemoteAddr())
 				//Proms[prom.Hash].Time = time.Now()
 				Proms[prom.Hash].endPoints <- ref
+				PromsLock.Unlock()
 				if debug {
 					log.Println("--waiting to close sub connection")
 				}
@@ -482,7 +518,14 @@ func main() {
 
 			// handle the get method for returning results to the prometheus client
 			if method == "GET" {
+				PromsArr := make([]Prom, 0)
+				PromsLock.Lock()
 				for _, p := range Proms {
+					PromsArr = append(PromsArr, p)
+				}
+				PromsLock.Unlock()
+				for _, p := range PromsArr {
+
 					if debug {
 						log.Println("comparing value for path redirect", path, "->", p.OrigPath)
 						//	log.Println("comparing value for path redirect", []byte(path), "->", []byte(p.OrigPath))
@@ -501,14 +544,24 @@ func main() {
 						}*/
 					}
 				}
-				parts := strings.SplitN(path, "/", 4)
-				if len(parts) > 2 && len(parts[1]) == 2 && len(parts[2]) == 32 {
+				//if len(parts) > 2 && len(parts[1]) == 3 && len(parts[2]) == 32 {
+				//if len(parts) > 2 && len(parts[1]) == 3 && len(parts[2]) == 32 {
+				if hash_url {
+					parts := strings.SplitN(path, "/", 4)
 					hash_buf := make([]byte, 16)
 					hex.Decode(hash_buf, []byte(parts[2]))
 					hash := [16]byte{}
 					copy(hash[:], hash_buf)
 					if len(parts) > 3 {
-						for _, ok := Proms[hash]; !ok; _, ok = Proms[hash] {
+						var PromHashed Prom
+						for {
+							var ok bool
+							PromsLock.Lock()
+							PromHashed, ok = Proms[hash]
+							PromsLock.Unlock()
+							if ok {
+								break
+							}
 							if debug {
 								log.Println("Waiting for endpoint to become available")
 							}
@@ -517,13 +570,12 @@ func main() {
 								return
 							}
 						}
-						if Proms[hash].UseEndpoint {
+						if PromHashed.UseEndpoint {
 							if debug {
 								log.Println("Using channel connection for request")
 							}
 
-							if len(path) <= 36 || len(parts) < 4 {
-								//Proms[hash].endPoints <- ref
+							if len(parts) < 4 {
 								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + path + "/" + srv))
 								return
 							}
@@ -535,7 +587,7 @@ func main() {
 									log.Println("  read off reflector")
 								}
 								select {
-								case ref = <-Proms[hash].endPoints:
+								case ref = <-PromHashed.endPoints:
 								case <-time.After(10 * time.Second):
 									return
 								}
@@ -565,7 +617,10 @@ func main() {
 						}
 					} else {
 						// If the requested hash exists, print it out
-						f, err := os.Open(basePath + Proms[hash].Path)
+						PromsLock.Lock()
+						PromHashed := Proms[hash].Path
+						PromsLock.Unlock()
+						f, err := os.Open(basePath + PromHashed)
 						if err == nil {
 							defer f.Close()
 							fi, err := f.Stat()
@@ -591,12 +646,13 @@ func main() {
 			// handle the post method
 			if method == "POST" {
 				prom.Size = contLen
-				_, promExists := Proms[prom.Hash]
 				PromsLock.Lock()
+				_, promExists := Proms[prom.Hash]
 				Proms[prom.Hash] = *prom
 				PromsLock.Unlock()
 				if !promExists {
-					go createJson()
+					//	go createJson()
+					log.Println("New metric found", prom)
 				}
 				if cont100 {
 					c.Write([]byte("HTTP/1.1 100 Continue, my friend\n\n"))
@@ -669,6 +725,7 @@ var jsonLock sync.Mutex
 
 func createJson() {
 	jsonLock.Lock()
+	defer jsonLock.Unlock()
 	jf, err := os.Create(jsonPath)
 	if err != nil {
 		log.Println("Error: could not create json file", jsonPath)
@@ -676,7 +733,13 @@ func createJson() {
 	}
 	jw := bufio.NewWriter(jf)
 	tgts := []string{}
+	PromsArr := make([]Prom, 0)
+	PromsLock.Lock()
 	for _, p := range Proms {
+		PromsArr = append(PromsArr, p)
+	}
+	PromsLock.Unlock()
+	for _, p := range PromsArr {
 		//lbls := []string{}
 		//for l, v := range p.LabelMap {
 		//	lbls = append(lbls, fmt.Sprintf("%q:%q", l, v))
@@ -687,12 +750,11 @@ func createJson() {
 		if p.UseEndpoint {
 			slash = "/"
 		}
-		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, p.Path+slash))
+		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, "/"+p.Path+slash))
 	}
 	fmt.Fprintf(jw, "[%s]", strings.Join(tgts, ","))
 	jw.Flush()
 	defer jf.Close()
-	jsonLock.Unlock()
 }
 
 func LoadCertficatesFromFile(path string) error {

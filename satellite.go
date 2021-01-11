@@ -46,7 +46,9 @@ var secureTarget bool
 var verifyCollector bool
 var verifyTarget bool
 var uHost = ""
+var uHostname = ""
 var tHost = ""
+var tHostname = ""
 var httpProxy = ""
 var method = "GET"
 
@@ -155,6 +157,7 @@ func main() {
 				port = "443"
 			}
 		}
+		uHostname = host
 		uHost = net.JoinHostPort(host, port)
 	}
 
@@ -171,6 +174,7 @@ func main() {
 				port = "443"
 			}
 		}
+		tHostname = host
 		tHost = net.JoinHostPort(host, port)
 	}
 
@@ -275,7 +279,7 @@ func mkChan() {
 		if secureCollector {
 			config = tls.Config{RootCAs: rootpool,
 				Certificates: []tls.Certificate{},
-				ClientCAs:    rootpool, InsecureSkipVerify: verifyCollector == false,
+				ClientCAs:    rootpool, InsecureSkipVerify: verifyCollector == false, ServerName: uHostname,
 				MinVersion:               tls.VersionTLS12,
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
@@ -288,7 +292,7 @@ func mkChan() {
 			}
 		} else {
 			config = tls.Config{RootCAs: rootpool,
-				ClientCAs: rootpool, InsecureSkipVerify: verifyCollector == false}
+				ClientCAs: rootpool, InsecureSkipVerify: verifyCollector == false, ServerName: uHostname}
 		}
 		config.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			if debug {
@@ -343,6 +347,13 @@ func mkChan() {
 
 		if j >= 4 {
 			//log.Println("read", buf[j-3:j+1])
+			if string(buf[j-4:j+1]) == "Okay\n" {
+				log.Fatal("Please make sure you are specifying /key/value pairs in the path for the collector endpoint")
+			}
+		}
+
+		if j >= 4 {
+			//log.Println("read", buf[j-3:j+1])
 			if string(buf[j-4:j+1]) == "PING\n" {
 				_, err := l.Write([]byte("PONG\n"))
 				if err != nil {
@@ -352,7 +363,7 @@ func mkChan() {
 				if debug {
 					log.Println("pingged!")
 				}
-				j = 0
+				j = -1
 			}
 		}
 	}

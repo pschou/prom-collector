@@ -1,6 +1,6 @@
 PROG_NAME := "prom-collector"
 IMAGE_NAME := "pschou/prom-collector"
-VERSION := "0.1"
+VERSION := "0.4"
 
 
 build:
@@ -9,6 +9,7 @@ build:
 
 docker: build
 	docker build -f Dockerfile --tag ${IMAGE_NAME}:${VERSION} .
-	docker build -f Dockerfile_sat --tag prom-satellite:${VERSION} .
-	docker push ${IMAGE_NAME}:${VERSION}; \
-	docker push prom-satellite:${VERSION}; \
+	#docker build -f Dockerfile_sat --tag prom-satellite:${VERSION} .
+	docker push ${IMAGE_NAME}:${VERSION};  
+	#docker push prom-satellite:${VERSION};  
+	docker save ${IMAGE_NAME}:${VERSION} > pschou_prom-collector.tar
