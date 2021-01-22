@@ -78,3 +78,29 @@ The flags available for prom-satellite are:
 ```
 
 If your boxes that need to be monitored are behind a firewall that prevents outgoing connections, you may consider implementing an http-proxy for enabling out going connections.  A good package to look into that does this is https://github.com/pschou/http-proxy .  All the best!
+
+
+Inside the prometheus.yml config file, you'll want to include the section
+```
+- job_name: collector
+  scheme: http
+  file_sd_configs:
+    - files:
+      - /etc/prometheus/collector.json
+  honor_labels: true
+  scrape_interval: 4m
+  relabel_configs:
+    - source_labels: [__address__]
+      regex: /*../([^/]*)
+      target_label: instance
+      replacement: "${1}"
+    - source_labels: [__address__]
+      regex: /*(.*)
+      target_label: __metrics_path__
+      replacement: "/collector/-${1}"
+    - source_labels: []
+      regex: .*
+      target_label: __address__
+      replacement: "localhost:9550"
+```
+      
