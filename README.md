@@ -86,7 +86,7 @@ Inside the prometheus.yml config file, you'll want to include the section
   scheme: http
   file_sd_configs:
     - files:
-      - /etc/prometheus/collector.json
+      - /dev/shm/metrics.json
   honor_labels: true
   scrape_interval: 4m
   relabel_configs:
