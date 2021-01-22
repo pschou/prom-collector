@@ -119,7 +119,7 @@ func main() {
 		flag.PrintDefaults()
 	}
 	var listen = flag.String("listen", ":9550", "Listen address for metrics")
-	var prefix = flag.String("prefix", "", "URL prefix used upstream in reverse proxy endpoint for all incoming requests")
+	var prefix = flag.String("prefix", "/collector", "URL prefix used upstream in reverse proxy endpoint for all incoming requests")
 	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
 	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
 	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
@@ -137,6 +137,9 @@ func main() {
 	debug = *verbose
 
 	urlPrefix = strings.TrimRight(*prefix, "/")
+	if urlPrefix != "" && urlPrefix[0] != '/' {
+		urlPrefix = "/" + urlPrefix
+	}
 	keyFile = *key_file
 	certFile = *cert_file
 	rootFile = *root_file

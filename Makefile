@@ -1,11 +1,12 @@
 PROG_NAME := "prom-collector"
 IMAGE_NAME := "pschou/prom-collector"
 VERSION := "0.4"
+FLAGS := "-s -w"
 
 
 build:
-	CGO_ENABLED=0 go build -o ${PROG_NAME} main.go
-	CGO_ENABLED=0 go build -o prom-satellite satellite.go
+	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o ${PROG_NAME} main.go
+	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o prom-satellite satellite.go
 
 docker: build
 	docker build -f Dockerfile --tag ${IMAGE_NAME}:${VERSION} .
