@@ -217,7 +217,7 @@ func main() {
 	}
 
 	go func() {
-		for now := range time.Tick(40 * time.Second) {
+		for now := range time.Tick(10 * time.Second) {
 			createJson()
 			if debug {
 				log.Println(now, "pinging all reflectors")
@@ -326,7 +326,7 @@ func main() {
 			contLen := -1
 			failure := ""
 			ch := "\nContent-Type: text/html; charset=UTF-8"
-			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com; Copyright Dec 2020 - Licensed for Personal Use Only\n\n"
+			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com\n\n"
 			headers := []string{}
 
 			// read input until emtpy line (http header ending)
@@ -456,17 +456,17 @@ func main() {
 
 			if !hash_url {
 				if len(parts)%2 != 0 && failure == "" {
-					failure = "Error path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format /LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
+					failure = "Path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format " + urlPrefix + "/LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
 				} else {
 					for i := 0; i < len(parts); i = i + 2 {
 						if check_label_name(parts[i]) == false || parts[i] == "" {
-							failure = "Error label \"" + parts[i] + "\" in path must have valid prometheus label name"
+							failure = "Label \"" + parts[i] + "\" in path must have valid prometheus label name"
 							break
 						}
 						lbl := strings.TrimSpace(parts[i])
 						val, err := url.QueryUnescape(strings.TrimSpace(parts[i+1]))
 						if err != nil {
-							failure = "Error while parsing label value in url \"" + parts[i+1] + "\""
+							failure = "Unable to parse label value in url \"" + parts[i+1] + "\""
 							break
 						}
 						prom.LabelMap[lbl] = val
@@ -650,15 +650,18 @@ func main() {
 			if method == "POST" {
 				prom.Size = contLen
 				PromsLock.Lock()
+				promsCount := len(Proms)
 				_, promExists := Proms[prom.Hash]
 				Proms[prom.Hash] = *prom
 				PromsLock.Unlock()
 				if !promExists {
-					//	go createJson()
+					if promsCount == 0 {
+						go createJson()
+					}
 					log.Println("New metric found", prom)
 				}
 				if cont100 {
-					c.Write([]byte("HTTP/1.1 100 Continue, my friend\n\n"))
+					c.Write([]byte("HTTP/1.1 100 Continue\n\n"))
 				}
 
 				os.Mkdir(fmt.Sprintf("%s/%02x", basePath, prom.Hash[0]), 0755)
@@ -681,7 +684,7 @@ func main() {
 					n, read_err := c.Read(buf[j : j+1])
 					i = i - n
 					if buf[j] == 0xa || i == 0 { //|| (j > 3 && read_err != nil) || i == 0 {
-						line := strings.TrimSpace(string(buf[0:j]))
+						line := strings.TrimSpace(string(buf[0 : j+1]))
 
 						if line == "" || strings.HasPrefix(line, "----------------") ||
 							strings.HasPrefix(line, "Content-Disposition: ") || strings.HasPrefix(line, "Content-Type: ") {
@@ -717,7 +720,7 @@ func main() {
 					}
 				}
 				w.Flush()
-				c.Write([]byte("HTTP/1.1 200 Go, and do what is right" + srv))
+				c.Write([]byte("HTTP/1.1 200 Go, and do what is right\nTransfer-Encoding: chunked" + srv))
 
 			}
 		}(conn)
@@ -729,9 +732,10 @@ var jsonLock sync.Mutex
 func createJson() {
 	jsonLock.Lock()
 	defer jsonLock.Unlock()
-	jf, err := os.Create(jsonPath)
+	jsonTmp := strings.TrimSuffix(jsonPath, "json") + "tmp"
+	jf, err := os.Create(jsonTmp)
 	if err != nil {
-		log.Println("Error: could not create json file", jsonPath)
+		log.Println("Error: could not create json file", jsonTmp)
 		return
 	}
 	jw := bufio.NewWriter(jf)
@@ -753,11 +757,15 @@ func createJson() {
 		if p.UseEndpoint {
 			slash = "/"
 		}
-		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, "/"+p.Path+slash))
+		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, "-"+p.Path[1:]+slash))
 	}
 	fmt.Fprintf(jw, "[%s]", strings.Join(tgts, ","))
 	jw.Flush()
-	defer jf.Close()
+	jf.Close()
+	err = os.Rename(jsonTmp, jsonPath)
+	if err != nil {
+		log.Println("Error renaming json file", err)
+	}
 }
 
 func LoadCertficatesFromFile(path string) error {
