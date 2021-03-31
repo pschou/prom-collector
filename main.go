@@ -679,7 +679,11 @@ func main() {
 				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
 				//fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
 
+				HELPS := make([]string, 0)
+				TYPES := make([]string, 0)
+
 				i := contLen
+			PromParse:
 				for j := 0; i > 0; j++ {
 					n, read_err := c.Read(buf[j : j+1])
 					i = i - n
@@ -691,6 +695,48 @@ func main() {
 							j = -1
 							continue
 						}
+
+						// Parse the HELP line
+						if strings.HasPrefix(line, "# HELP ") {
+							if len(line) > 7 {
+								// Loop over helps and make sure this is not a duplicate
+								p := strings.SplitN(line[7:], " ", 2)
+								for _, h := range HELPS {
+									if p[0] == h {
+										j = -1
+										continue PromParse
+									}
+								}
+							} else {
+								j = -1
+								continue
+							}
+						}
+
+						// Parse the TYPE line
+						if strings.HasPrefix(line, "# TYPE ") {
+							if len(line) > 7 {
+								// Loop over helps and make sure this is not a duplicate
+								p := strings.SplitN(line[7:], " ", 2)
+								for _, h := range TYPES {
+									if p[0] == h {
+										j = -1
+										continue PromParse
+									}
+								}
+							} else {
+								j = -1
+								continue
+							}
+						}
+
+						if strings.HasPrefix(line, "# EOF") {
+							// Strip off EOF as we'll add our own
+							j = -1
+							continue
+						}
+
+						// Pass through all other comments
 						if strings.HasPrefix(line, "#") {
 							fmt.Fprintf(w, "%s\n", line)
 							j = -1
