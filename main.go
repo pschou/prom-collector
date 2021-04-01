@@ -15,10 +15,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
-	"flag"
 	"fmt"
 	"net/url"
 	//"io"
+	"github.com/pschou/go-params"
 	"io"
 	"io/ioutil"
 	"log"
@@ -114,24 +114,25 @@ func loadKeys() {
 }
 
 func main() {
-	flag.Usage = func() {
+	params.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Prometheus Collector (%s), written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", version, os.Args[0])
-		flag.PrintDefaults()
+		params.PrintDefaults()
 	}
-	var listen = flag.String("listen", ":9550", "Listen address for metrics")
-	var prefix = flag.String("prefix", "/collector", "URL prefix used upstream in reverse proxy endpoint for all incoming requests")
-	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
-	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
-	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
-	var verify_server = flag.Bool("verify-server", true, "Verify or disable server certificate check")
-	var secure_server = flag.Bool("secure-server", true, "Enforce TLS 1.2+ on server side")
-	var tls_enabled = flag.Bool("tls", false, "Enable listener TLS (enable with -tls=true)")
-	var verbose = flag.Bool("debug", false, "Verbose output")
-	var basepath = flag.String("path", basePath, "Path into which to put the prometheus data")
-	var jsonpath = flag.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling")
-	//var jsonstatic_path = flag.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
-	//var jsonstatic_path = flag.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
-	flag.Parse()
+	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
+	var prefix = params.String("prefix", "/collector", "Used for all incoming requests, useful for a reverse proxy endpoint", "URL_PREFIX")
+	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute", "FILE")
+	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute", "FILE")
+	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+	var verify_server = params.Bool("verify-server", true, "Verify or disable server certificate check", "BOOLEAN")
+	var secure_server = params.Bool("secure-server", true, "Enforce TLS 1.2+ on server side", "BOOLEAN")
+	var tls_enabled = params.Bool("tls", false, "Enable listener TLS", "BOOLEAN")
+	var verbose = params.Bool("debug", false, "Verbose output", "BOOLEAN")
+	var basepath = params.String("path", basePath, "Path into which to put the prometheus data", "DIRECTORY")
+	var jsonpath = params.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling", "JSON_FILE")
+	//var jsonstatic_path = params.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
+	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
+	params.SetUsageIndent(23)
+	params.Parse()
 
 	//var err error
 	debug = *verbose

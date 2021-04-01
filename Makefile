@@ -1,6 +1,6 @@
 PROG_NAME := "prom-collector"
 IMAGE_NAME := "pschou/prom-collector"
-VERSION := "0.7"
+VERSION := "0.8"
 FLAGS := "-s -w"
 
 
