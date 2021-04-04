@@ -115,23 +115,23 @@ func loadKeys() {
 
 func main() {
 	params.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Prometheus Collector (%s), written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", version, os.Args[0])
+		fmt.Fprintf(os.Stderr, "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\n Usage of %s:\n", version, os.Args[0])
 		params.PrintDefaults()
 	}
 	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
-	var prefix = params.String("prefix", "/collector", "Used for all incoming requests, useful for a reverse proxy endpoint", "URL_PREFIX")
-	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute", "FILE")
-	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute", "FILE")
+	var prefix = params.String("prefix", "/collector", "Used for all incoming requests, useful for a reverse proxy endpoint\n", "URL_PREFIX")
+	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
+	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
 	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
-	var verify_server = params.Bool("verify-server", true, "Verify or disable server certificate check", "BOOLEAN")
-	var secure_server = params.Bool("secure-server", true, "Enforce TLS 1.2+ on server side", "BOOLEAN")
-	var tls_enabled = params.Bool("tls", false, "Enable listener TLS", "BOOLEAN")
-	var verbose = params.Bool("debug", false, "Verbose output", "BOOLEAN")
+	var verify_server = params.Bool("verify-server", true, "Verify or disable server certificate check", "BOOL")
+	var secure_server = params.Bool("secure-server", true, "Enforce TLS 1.2+ on server side", "BOOL")
+	var tls_enabled = params.Bool("tls", false, "Enable listener TLS", "BOOL")
+	var verbose = params.Pres("debug", "Verbose output")
 	var basepath = params.String("path", basePath, "Path into which to put the prometheus data", "DIRECTORY")
-	var jsonpath = params.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling", "JSON_FILE")
+	var jsonpath = params.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling\n", "JSON_FILE")
 	//var jsonstatic_path = params.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
-	params.SetUsageIndent(23)
+	//params.SetUsageIndent(23)
 	params.Parse()
 
 	//var err error
@@ -327,7 +327,7 @@ func main() {
 			contLen := -1
 			failure := ""
 			ch := "\nContent-Type: text/html; charset=UTF-8"
-			srv := "\nServer: Prom Collector - Written by Paul Schou github@paulschou.com\n\n"
+			srv := "\nServer: Prom Collector - Written by Paul Schou (github.com/pschou/prom-collector)\n\n"
 			headers := []string{}
 
 			// read input until emtpy line (http header ending)

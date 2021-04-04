@@ -9,8 +9,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"flag"
 	"fmt"
+	"github.com/pschou/go-params"
 	"io"
 	"io/ioutil"
 	"log"
@@ -104,25 +104,25 @@ func loadKeys() {
 }
 
 func main() {
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Prometheus Satellite (%s), written by Paul Schou github@paulschou.com in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement.\n\n Usage of %s:\n", version, os.Args[0])
-		flag.PrintDefaults()
+	params.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Prometheus SAtellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\n Usage of %s:\n", version, os.Args[0])
+		params.PrintDefaults()
 	}
-	var collector = flag.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector")
-	var Method = flag.String("method", method, "Method to use to connect to collector")
-	var target = flag.String("target", "http://localhost/", "Local endpoint to tunnel the collector to")
-	var http_proxy = flag.String("http-proxy", "", "host for establishing connections to prom-collector")
-	var cert_file = flag.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute")
-	var key_file = flag.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute")
-	var root_file = flag.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries")
-	var verify_target = flag.Bool("verify-target", true, "Verify or disable client certificate check, -verify-target=false to ignore SAN")
-	var verify_collector = flag.Bool("verify-collector", true, "Verify or disable server certificate check, -verify-collector=false to ignore SAN")
-	var secure_target = flag.Bool("secure-target", true, "Enforce TLS 1.2+ on client side")
-	var secure_collector = flag.Bool("secure-collector", true, "Enforce TLS 1.2+ on server side")
-	//var tls_host = flag.String("host", "", "Hostname to verify outgoing connection with")
-	var verbose = flag.Bool("debug", false, "Verbose output")
-	var in_threads = flag.Int("threads", threads, "Number of concurrent tcp streams to run to improve performance")
-	flag.Parse()
+	var collector = params.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector", "URL")
+	var Method = params.String("method", method, "Method to use to connect to collector", "METHOD")
+	var target = params.String("target", "http://localhost/", "Local endpoint to tunnel the collector to", "URL")
+	var http_proxy = params.String("http-proxy", "", "Proxy for establishing connections to prom-collector", "PROXY-URL")
+	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
+	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
+	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+	var verify_target = params.Bool("verify-target", true, "Verify or disable client certificate check, used to ignore SAN", "BOOL")
+	var verify_collector = params.Bool("verify-collector", true, "Verify or disable server certificate check, used to ignore SAN", "BOOL")
+	var secure_target = params.Bool("secure-target", true, "Enforce TLS 1.2+ on client side", "BOOL")
+	var secure_collector = params.Bool("secure-collector", true, "Enforce TLS 1.2+ on server side", "BOOL")
+	//var tls_host = params.String("host", "", "Hostname to verify outgoing connection with")
+	var verbose = params.Pres("debug", "Verbose output")
+	var in_threads = params.Int("threads", threads, "Number of concurrent tcp streams to run to improve performance", "NUM")
+	params.Parse()
 
 	var err error
 	debug = *verbose

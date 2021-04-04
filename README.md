@@ -18,29 +18,29 @@ Setup the prom-collector at a central location and allow incoming connections to
 
 To specify a new or change the json output (for the proemetheus scrape), use:
 ```
+$ ./prom-collector -h
+Prometheus Collector - written by Paul Schou (github.com/pschou/prom-collector) in December 2020
+Prsonal use only, provided AS-IS -- not responsible for loss.
+Usage implies agreement.
+
  Usage of ./prom-collector:
-  -ca string
-        File to load with ROOT CAs - reloaded every minute by adding any new entries (default "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
-  -cert string
-        File to load with CERT - automatically reloaded every minute (default "/etc/pki/server.pem")
-  -debug
-        Verbose output
-  -json string
-        Path into which to put the prometheus json endpoints for polling (default "/dev/shm/metrics.json")
-  -key string
-        File to load with KEY - automatically reloaded every minute (default "/etc/pki/server.pem")
-  -listen string
-        Listen address for metrics (default ":9550")
-  -path string
-        Path into which to put the prometheus data (default "/dev/shm/collector")
-  -prefix string
-        URL prefix used upstream in reverse proxy endpoint for all incoming requests
-  -secure-server
-        Enforce TLS 1.2 on server side (default true)
-  -tls
-        Enable listener TLS (enable with -tls=true)
-  -verify-server
-        Verify or disable server certificate check (default true)
+Options:
+--ca FILE             File to load with ROOT CAs - reloaded every minute by adding any new entries
+                        (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+--cert FILE           File to load with CERT - automatically reloaded every minute
+                        (Default: "/etc/pki/server.pem")
+--debug               Verbose output
+--json JSON_FILE      Path into which to put all the prometheus endpoints for polling
+                        (Default: "/dev/shm/metrics.json")
+--key FILE            File to load with KEY - automatically reloaded every minute
+                        (Default: "/etc/pki/server.pem")
+--listen HOST:PORT    Listen address for metrics  (Default: ":9550")
+--path DIRECTORY      Path into which to put the prometheus data  (Default: "/dev/shm/collector")
+--prefix URL_PREFIX   Used for all incoming requests, useful for a reverse proxy endpoint
+                        (Default: "/collector")
+--secure-server BOOL  Enforce TLS 1.2+ on server side  (Default: true)
+--tls BOOL            Enable listener TLS  (Default: false)
+--verify-server BOOL  Verify or disable server certificate check  (Default: true)
 ```
 
 On the satellite system run
@@ -50,31 +50,29 @@ On the satellite system run
 
 The flags available for prom-satellite are:
 ```
+$ ./prom-satellite -h
+Prometheus SAtellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020
+Prsonal use only, provided AS-IS -- not responsible for loss.
+Usage implies agreement.
+
  Usage of ./prom-satellite:
-  -ca string
-        File to load with ROOT CAs - reloaded every minute by adding any new entries (default "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
-  -cert string
-        File to load with CERT - automatically reloaded every minute (default "/etc/pki/server.pem")
-  -collector string
-        Remote listen URL for connector (default "http://localhost:9550/instance/test")
-  -debug
-        Verbose output
-  -http-proxy string
-        Address for establishing connections using http-proxy CONNECT method
-  -key string
-        File to load with KEY - automatically reloaded every minute (default "/etc/pki/server.pem")
-  -secure-collector
-        Enforce TLS 1.2+ on server side (default true)
-  -secure-target
-        Enforce TLS 1.2+ on client side (default true)
-  -target string
-        Local endpoint for connector (default "http://localhost/index.html")
-  -threads int
-        Number of concurrent tcp streams to run to improve performance (default 3)
-  -verify-collector
-        Verify or disable server certificate check, -verify-collector=false to ignore SAN (default true)
-  -verify-target
-        Verify or disable client certificate check, -verify-target=false to ignore SAN (default true)
+Options:
+--ca FILE              File to load with ROOT CAs - reloaded every minute by adding any new entries
+                         (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+--cert FILE            File to load with CERT - automatically reloaded every minute
+                         (Default: "/etc/pki/server.pem")
+--collector URL        Remote listen URL for connector  (Default: "http://localhost:9550/instance/test")
+--debug                Verbose output
+--http-proxy PROXY-URL  Proxy for establishing connections to prom-collector  (Default: "")
+--key FILE             File to load with KEY - automatically reloaded every minute
+                         (Default: "/etc/pki/server.pem")
+--method METHOD        Method to use to connect to collector  (Default: "GET")
+--secure-collector BOOL  Enforce TLS 1.2+ on server side  (Default: true)
+--secure-target BOOL   Enforce TLS 1.2+ on client side  (Default: true)
+--target URL           Local endpoint to tunnel the collector to  (Default: "http://localhost/")
+--threads NUM          Number of concurrent tcp streams to run to improve performance  (Default: 3)
+--verify-collector BOOL  Verify or disable server certificate check, used to ignore SAN  (Default: true)
+--verify-target BOOL   Verify or disable client certificate check, used to ignore SAN  (Default: true)
 ```
 
 If your boxes that need to be monitored are behind a firewall that prevents outgoing connections, you may consider implementing an http-proxy for enabling out going connections.  A good package to look into that does this is https://github.com/pschou/http-proxy .  All the best!

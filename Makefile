@@ -1,7 +1,7 @@
 PROG_NAME := "prom-collector"
 IMAGE_NAME := "pschou/prom-collector"
-VERSION := "0.8"
-FLAGS := "-s -w"
+VERSION = 0.1.$(shell date +%Y%m%d.%H%M)
+FLAGS := "-s -w -X main.version=${VERSION}"
 
 
 build:
