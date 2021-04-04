@@ -19,11 +19,12 @@ Setup the prom-collector at a central location and allow incoming connections to
 To specify a new or change the json output (for the proemetheus scrape), use:
 ```
 $ ./prom-collector -h
-Prometheus Collector - written by Paul Schou (github.com/pschou/prom-collector) in December 2020
+Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020
 Prsonal use only, provided AS-IS -- not responsible for loss.
 Usage implies agreement.
 
- Usage of ./prom-collector:
+Usage: ./prom-collector [options...]
+
 Options:
 --ca FILE             File to load with ROOT CAs - reloaded every minute by adding any new entries
                         (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
@@ -51,11 +52,12 @@ On the satellite system run
 The flags available for prom-satellite are:
 ```
 $ ./prom-satellite -h
-Prometheus SAtellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020
+Prometheus Satellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020
 Prsonal use only, provided AS-IS -- not responsible for loss.
 Usage implies agreement.
 
- Usage of ./prom-satellite:
+Usage: ./prom-satellite: [options...]
+
 Options:
 --ca FILE              File to load with ROOT CAs - reloaded every minute by adding any new entries
                          (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")

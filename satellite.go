@@ -105,7 +105,7 @@ func loadKeys() {
 
 func main() {
 	params.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Prometheus SAtellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\n Usage of %s:\n", version, os.Args[0])
+		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Satellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\nUsage: %s: [options...]\n\n", version, os.Args[0])
 		params.PrintDefaults()
 	}
 	var collector = params.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector", "URL")
