@@ -433,6 +433,10 @@ func main() {
 					PromsArr = append(PromsArr, prom)
 				}
 				PromsLock.Unlock()
+				// sort our list of Proms by path
+				sort.SliceStable(PromsArr, func(i, j int) bool {
+					return PromsArr[i].Path < PromsArr[j].Path
+				})
 				for _, p := range PromsArr {
 					if p.UseEndpoint {
 						buffer.WriteString(fmt.Sprintf("<a href=\"-%s/\">%v: %v</a> - @%s %v<br>\n", p.Path[1:], p.Path[4:], p.LabelSlice, p.LastSeen, p.Time))
@@ -650,31 +654,22 @@ func main() {
 			// handle the post method
 			if method == "POST" {
 				prom.Size = contLen
-				PromsLock.Lock()
-				promsCount := len(Proms)
-				_, promExists := Proms[prom.Hash]
-				Proms[prom.Hash] = *prom
-				PromsLock.Unlock()
-				if !promExists {
-					if promsCount == 0 {
-						go createJson()
-					}
-					log.Println("New metric found", prom)
-				}
 				if cont100 {
 					c.Write([]byte("HTTP/1.1 100 Continue\n\n"))
 				}
 
+				// postpone checking for new metric until the data is saved
 				os.Mkdir(fmt.Sprintf("%s/%02x", basePath, prom.Hash[0]), 0755)
+				dataPath := basePath + prom.Path
+				dataTmp := dataPath + ".tmp"
 				if debug {
-					log.Println("creating file", basePath+prom.Path)
+					log.Println("creating tmp data file", dataTmp)
 				}
-				f, err := os.Create(basePath + prom.Path)
+				f, err := os.Create(dataTmp)
 				if err != nil {
-					log.Println("could not create file", basePath+prom.Path)
+					log.Println("could not create tmp data file", dataTmp)
 					return
 				}
-				defer f.Close()
 
 				w := bufio.NewWriter(f)
 				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
@@ -767,6 +762,26 @@ func main() {
 					}
 				}
 				w.Flush()
+				f.Close()
+				if debug {
+					log.Println("updating data file", dataPath, "from tmp file")
+				}
+				err = os.Rename(dataTmp, dataPath)
+				if err != nil {
+					log.Println("Error renaming data file", err)
+					os.Remove(dataTmp)
+					os.Remove(dataPath)
+				}
+				// Now we can update the Prom data struct since the data has been saved,
+				// we don't want Prometheus to see a new target defined if the data's not ready.
+				// Update of new target json will happen within 10 seconds, that should be good enough
+				PromsLock.Lock()
+				_, promExists := Proms[prom.Hash]
+				Proms[prom.Hash] = *prom
+				PromsLock.Unlock()
+				if !promExists {
+					log.Println("New metric found", prom)
+				}
 				c.Write([]byte("HTTP/1.1 200 Go, and do what is right\nTransfer-Encoding: chunked" + srv))
 
 			}
@@ -793,6 +808,10 @@ func createJson() {
 		PromsArr = append(PromsArr, p)
 	}
 	PromsLock.Unlock()
+	// sort our list of Proms by path
+	sort.SliceStable(PromsArr, func(i, j int) bool {
+		return PromsArr[i].Path < PromsArr[j].Path
+	})
 	for _, p := range PromsArr {
 		//lbls := []string{}
 		//for l, v := range p.LabelMap {
