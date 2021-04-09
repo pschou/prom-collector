@@ -474,6 +474,11 @@ func main() {
 			}
 
 			if !hash_url {
+				if excludePath != nil && excludePath.MatchString(path) {
+					// drop due to exclude filter
+					return
+				}
+
 				if len(parts)%2 != 0 && failure == "" {
 					failure = "Path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format " + urlPrefix + "/LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
 				} else {
@@ -499,10 +504,6 @@ func main() {
 				sort.Strings(prom.LabelSlice)
 				prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
 				prom.Path = fmt.Sprintf("/%02x/%x", prom.Hash[0], prom.Hash)
-				if excludePath != nil && excludePath.MatchString(prom.Path) {
-					// drop due to exclude filter
-					return
-				}
 			}
 
 			// Handle the incoming reflection satellite connection
