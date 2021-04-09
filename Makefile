@@ -10,6 +10,9 @@ build:
 	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o prom-satellite satellite.go
 	upx --lzma prom-satellite
 
+go:
+	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o ${PROG_NAME} main.go
+
 docker: build
 	docker build -f Dockerfile --tag ${IMAGE_NAME}:${VERSION} .
 	#docker build -f Dockerfile_sat --tag prom-satellite:${VERSION} .

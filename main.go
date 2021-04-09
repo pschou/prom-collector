@@ -7,9 +7,9 @@ package main
 
 import (
 	"crypto/md5"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"math/rand"
 	//"encoding/json"
 	"bufio"
 	"encoding/hex"
@@ -26,6 +26,7 @@ import (
 	"os"
 	//"regexp"
 	"bytes"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,8 @@ var certs_loaded = make(map[string]bool, 0)
 var debug = false
 var basePath = "/dev/shm/collector"
 var jsonPath = "/dev/shm/metrics.json"
+var excludePath *regexp.Regexp
+var excludeMetric *regexp.Regexp
 
 func loadKeys() {
 	keypair_mu.RLock()
@@ -120,33 +123,44 @@ func main() {
 	}
 	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
 	var prefix = params.String("prefix", "/collector", "Used for all incoming requests, useful for a reverse proxy endpoint\n", "URL_PREFIX")
-	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
-	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
-	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
 	var verify_server = params.Bool("verify-server", true, "Verify or disable server certificate check", "BOOL")
 	var secure_server = params.Bool("secure-server", true, "Enforce TLS 1.2+ on server side", "BOOL")
 	var tls_enabled = params.Bool("tls", false, "Enable listener TLS", "BOOL")
-	var verbose = params.Pres("debug", "Verbose output")
-	var basepath = params.String("path", basePath, "Path into which to put the prometheus data", "DIRECTORY")
-	var jsonpath = params.String("json", jsonPath, "Path into which to put all the prometheus endpoints for polling\n", "JSON_FILE")
+	params.PresVar(&debug, "debug", "Verbose output")
+	params.StringVar(&basePath, "path", basePath, "Path into which to put the prometheus data", "DIRECTORY")
+	params.StringVar(&jsonPath, "json", jsonPath, "Path into which to put all the prometheus endpoints for polling\n", "JSON_FILE")
+	exclude_path := params.String("exclude-path", "", "Path filter for removing metric push endpoints", "REGEX")
+	exclude_metric := params.String("exclude-metric", "", "Metric filter for removing metric from dump", "REGEX")
 	//var jsonstatic_path = params.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//params.SetUsageIndent(23)
+
+	params.GroupingSet("Certificate")
+	params.StringVar(&certFile, "cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
+	params.StringVar(&keyFile, "key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
+	params.StringVar(&rootFile, "ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+
 	params.Parse()
 
+	if *exclude_path != "" {
+		excludePath, _ = regexp.Compile(*exclude_path)
+	}
+	if *exclude_metric != "" {
+		excludeMetric, _ = regexp.Compile(*exclude_metric)
+	}
 	//var err error
-	debug = *verbose
+	//debug = *verbose
 
 	urlPrefix = strings.TrimRight(*prefix, "/")
 	if urlPrefix != "" && urlPrefix[0] != '/' {
 		urlPrefix = "/" + urlPrefix
 	}
-	keyFile = *key_file
-	certFile = *cert_file
-	rootFile = *root_file
+	//keyFile = *key_file
+	//certFile = *cert_file
+	//rootFile = *root_file
 	rootpool = x509.NewCertPool()
-	basePath = *basepath
-	jsonPath = *jsonpath
+	//basePath = *basepath
+	//jsonPath = *jsonpath
 	//Proms = make(map[[16]byte]Prom, 0)
 
 	_, err := os.Stat(basePath)
@@ -200,7 +214,7 @@ func main() {
 			return keypair, nil
 		}
 
-		config.Rand = rand.Reader
+		//config.Rand = rand.Reader
 		if debug {
 			fmt.Println("TLS Listening on", *listen)
 		}
@@ -485,6 +499,10 @@ func main() {
 				sort.Strings(prom.LabelSlice)
 				prom.Hash = md5.Sum([]byte(strings.Join(prom.LabelSlice, "\n")))
 				prom.Path = fmt.Sprintf("/%02x/%x", prom.Hash[0], prom.Hash)
+				if excludePath != nil && excludePath.MatchString(prom.Path) {
+					// drop due to exclude filter
+					return
+				}
 			}
 
 			// Handle the incoming reflection satellite connection
@@ -661,7 +679,7 @@ func main() {
 				// postpone checking for new metric until the data is saved
 				os.Mkdir(fmt.Sprintf("%s/%02x", basePath, prom.Hash[0]), 0755)
 				dataPath := basePath + prom.Path
-				dataTmp := dataPath + ".tmp"
+				dataTmp := fmt.Sprintf("%s.%04d", dataPath, rand.Intn(9999))
 				if debug {
 					log.Println("creating tmp data file", dataTmp)
 				}
@@ -739,6 +757,12 @@ func main() {
 							continue
 						}
 						MetricName, MetricLabels, MetricValue, MetricTime, MetricErr := prom_getparts(line, prom.LabelMap)
+
+						if excludeMetric != nil && excludeMetric.MatchString(MetricName) {
+							// drop due to exclude filter
+							continue
+						}
+
 						if MetricErr != "" {
 							fmt.Fprintf(w, "# %s\n", MetricErr)
 						}
