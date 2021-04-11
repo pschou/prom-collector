@@ -759,11 +759,6 @@ func main() {
 						}
 						MetricName, MetricLabels, MetricValue, MetricTime, MetricErr := prom_getparts(line, prom.LabelMap)
 
-						if excludeMetric != nil && excludeMetric.MatchString(MetricName) {
-							// drop due to exclude filter
-							continue
-						}
-
 						if MetricErr != "" {
 							fmt.Fprintf(w, "# %s\n", MetricErr)
 						}
@@ -772,11 +767,16 @@ func main() {
 							MetricTime = prom.TimeStr
 						}
 
-						if MetricName != "" {
-							if MetricLabels == "" {
-								fmt.Fprintf(w, "%s %s %s\n", MetricName, MetricValue, MetricTime)
-							} else {
-								fmt.Fprintf(w, "%s{%s} %s %s\n", MetricName, MetricLabels, MetricValue, MetricTime)
+						if excludeMetric != nil && excludeMetric.MatchString(MetricName) {
+							// drop due to exclude filter
+						} else {
+
+							if MetricName != "" {
+								if MetricLabels == "" {
+									fmt.Fprintf(w, "%s %s %s\n", MetricName, MetricValue, MetricTime)
+								} else {
+									fmt.Fprintf(w, "%s{%s} %s %s\n", MetricName, MetricLabels, MetricValue, MetricTime)
+								}
 							}
 						}
 
