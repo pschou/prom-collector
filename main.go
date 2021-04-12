@@ -121,7 +121,7 @@ func loadKeys() {
 
 func main() {
 	params.Usage = func() {
-		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nProvided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\nUsage: %s [options...]\n\n", version, os.Args[0])
+		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nProvided AS-IS, not responsible for loss, see LICENSE.  Usage implies agreement. (Version: %s)\n\nUsage: %s [options...]\n\n", version, os.Args[0])
 		params.PrintDefaults()
 	}
 	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
@@ -137,12 +137,14 @@ func main() {
 	//var jsonstatic_path = params.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//params.SetUsageIndent(23)
-	params.PresVar(&compressed, "C", "Turn on gzip compression")
+	params.PresVar(&compressed, "compress", "Turn on gzip compression")
 
 	params.GroupingSet("Certificate")
 	params.StringVar(&certFile, "cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&keyFile, "key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&rootFile, "ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+
+	params.CommandLine.Indent = 2
 
 	params.Parse()
 
