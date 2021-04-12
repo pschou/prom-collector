@@ -434,6 +434,15 @@ func main() {
 			//				return
 			//			}
 
+			// Return the last written JSON for external queries
+			if method == "GET" && path == "/json" {
+				f, err := os.Open(jsonPath)
+				if err == nil {
+					io.Copy(c, f)
+				}
+				return
+			}
+
 			// get the index and list endpoints
 			if method == "GET" && (path == "" || path == "/") {
 				var buffer bytes.Buffer
