@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	//"encoding/json"
 	"bufio"
+	"compress/gzip"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -56,6 +57,8 @@ type reflector struct {
 
 var Proms = map[[16]byte]Prom{}
 var PromsLock sync.Mutex
+
+var compressed = false
 
 var version = "0.1"
 var urlPrefix = ""
@@ -118,7 +121,7 @@ func loadKeys() {
 
 func main() {
 	params.Usage = func() {
-		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nPrsonal use only, provided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\nUsage: %s [options...]\n\n", version, os.Args[0])
+		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nProvided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\nUsage: %s [options...]\n\n", version, os.Args[0])
 		params.PrintDefaults()
 	}
 	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
@@ -134,6 +137,7 @@ func main() {
 	//var jsonstatic_path = params.String("json-static", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//params.SetUsageIndent(23)
+	params.PresVar(&compressed, "C", "Turn on gzip compression")
 
 	params.GroupingSet("Certificate")
 	params.StringVar(&certFile, "cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
@@ -148,20 +152,13 @@ func main() {
 	if *exclude_metric != "" {
 		excludeMetric, _ = regexp.Compile(*exclude_metric)
 	}
-	//var err error
-	//debug = *verbose
 
 	urlPrefix = strings.TrimRight(*prefix, "/")
 	if urlPrefix != "" && urlPrefix[0] != '/' {
 		urlPrefix = "/" + urlPrefix
 	}
-	//keyFile = *key_file
-	//certFile = *cert_file
-	//rootFile = *root_file
+
 	rootpool = x509.NewCertPool()
-	//basePath = *basepath
-	//jsonPath = *jsonpath
-	//Proms = make(map[[16]byte]Prom, 0)
 
 	_, err := os.Stat(basePath)
 	if err != nil {
@@ -473,6 +470,7 @@ func main() {
 				hash_url = true
 			}
 
+			// Build the hash value for the URL value provided
 			if !hash_url {
 				if excludePath != nil && excludePath.MatchString(path) {
 					// drop due to exclude filter
@@ -480,7 +478,8 @@ func main() {
 				}
 
 				if len(parts)%2 != 0 && failure == "" {
-					failure = "Path \"/" + strings.Trim(path[1:], "/ \r\t") + "\" must have even pairs, be in format " + urlPrefix + "/LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
+					failure = "Path \"/" + strings.Trim(path[1:], "/ \r\t") +
+						"\" must have even pairs, be in format " + urlPrefix + "/LABEL_1/VALUE_1/LABEL_2/VALUE_2 / ..."
 				} else {
 					for i := 0; i < len(parts); i = i + 2 {
 						if check_label_name(parts[i]) == false || parts[i] == "" {
@@ -654,9 +653,15 @@ func main() {
 							if err != nil {
 								failure = "Could not find " + path
 							} else {
+								f.Close()
 								c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Length: %d\nContent-Type: text/text; charset=UTF-8%s", fi.Size(), srv)))
 								//c.Write([]byte("HTTP/1 200 As requested" + ct + srv))
-								io.Copy(c, f)
+								if compressed {
+									gzipReader, _ := gzip.NewReader(f)
+									io.Copy(c, gzipReader)
+								} else {
+									io.Copy(c, f)
+								}
 								return
 							}
 						} else {
@@ -690,17 +695,35 @@ func main() {
 					return
 				}
 
-				w := bufio.NewWriter(f)
+				var w io.Writer
+				var gzipWriter *gzip.Writer
+				var bufWriter *bufio.Writer
+
+				if compressed {
+					gzipWriter, _ = gzip.NewWriterLevel(f, gzip.BestSpeed)
+					w = gzipWriter
+				} else {
+					bufWriter = bufio.NewWriter(f)
+					w = bufWriter
+				}
+
+				br := bufio.NewReader(c)
+
+				// Log when and where the data file came from
 				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
+				fmt.Fprintf(w, "prom_collector_timestamp %v %v\n", prom.TimeStr, prom.TimeStr)
+
 				//fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
 
 				HELPS := make([]string, 0)
 				TYPES := make([]string, 0)
 
+				// Create buffer reader to prevent system calls
+
 				i := contLen
 			PromParse:
 				for j := 0; i > 0; j++ {
-					n, read_err := c.Read(buf[j : j+1])
+					n, read_err := br.Read(buf[j : j+1])
 					i = i - n
 					if buf[j] == 0xa || i == 0 { //|| (j > 3 && read_err != nil) || i == 0 {
 						line := strings.TrimSpace(string(buf[0 : j+1]))
@@ -723,6 +746,7 @@ func main() {
 									}
 								}
 							} else {
+								// Drop any empty helps
 								j = -1
 								continue
 							}
@@ -740,6 +764,7 @@ func main() {
 									}
 								}
 							} else {
+								// Drop any empty types
 								j = -1
 								continue
 							}
@@ -786,8 +811,15 @@ func main() {
 						break
 					}
 				}
-				w.Flush()
+
+				if compressed {
+					//gzipWriter.Flush()
+					gzipWriter.Close()
+				} else {
+					bufWriter.Flush()
+				}
 				f.Close()
+
 				if debug {
 					log.Println("updating data file", dataPath, "from tmp file")
 				}
@@ -797,9 +829,10 @@ func main() {
 					os.Remove(dataTmp)
 					os.Remove(dataPath)
 				}
-				// Now we can update the Prom data struct since the data has been saved,
-				// we don't want Prometheus to see a new target defined if the data's not ready.
-				// Update of new target json will happen within 10 seconds, that should be good enough
+				// Now we can update the Prom data struct since the data has been
+				// saved, we don't want Prometheus to see a new target defined if the
+				// data's not ready.  Update of new target json will happen within 10
+				// seconds, that should be good enough
 				PromsLock.Lock()
 				_, promExists := Proms[prom.Hash]
 				Proms[prom.Hash] = *prom
