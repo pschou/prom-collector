@@ -328,8 +328,9 @@ func main() {
 			fmt.Println("New connection from", conn.RemoteAddr())
 		}
 
-		go func(c net.Conn) {
-			defer c.Close()
+		go func(conn net.Conn) {
+			defer conn.Close()
+			c := bufio.NewReader(conn)
 			buf_size := 257 * 1024
 			buf := make([]byte, buf_size) // simple buffer for incoming requests
 			path := ""
@@ -408,7 +409,7 @@ func main() {
 			// print out any errors
 			if urlPrefix != "" {
 				if urlHost == "" && strings.HasPrefix(path, urlPrefix+"/") == false {
-					c.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
+					conn.Write([]byte("HTTP/1.1 302 Moved\nLocation: " + urlPrefix + "/" + srv))
 					return
 				}
 				path = strings.TrimPrefix(path, urlPrefix)
@@ -424,7 +425,7 @@ func main() {
 				}
 			}
 			if failure != "" {
-				c.Write([]byte("HTTP/1.1 404 Error: " + failure + cl(failure) + srv + failure))
+				conn.Write([]byte("HTTP/1.1 404 Error: " + failure + cl(failure) + srv + failure))
 				return
 			}
 
@@ -432,7 +433,7 @@ func main() {
 			//				if debug {
 			//					log.Println("  failure: " + failure)
 			//				}
-			//				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+			//				conn.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
 			//				return
 			//			}
 
@@ -440,7 +441,7 @@ func main() {
 			if method == "GET" && path == "/json" {
 				f, err := os.Open(jsonPath)
 				if err == nil {
-					io.Copy(c, f)
+					io.Copy(conn, f)
 				}
 				return
 			}
@@ -467,8 +468,8 @@ func main() {
 					}
 				}
 				s := "Prom-Collector" + buffer.String()
-				c.Write([]byte("HTTP/1.1 200 Okay" + cl(s) + ch + srv + s))
-				c.Close()
+				conn.Write([]byte("HTTP/1.1 200 Okay" + cl(s) + ch + srv + s))
+				//c.Close()
 				return
 			}
 
@@ -484,9 +485,9 @@ func main() {
 			// Build the hash value for the URL value provided
 			if !hash_url {
 				if excludePath != nil && excludePath.MatchString(path) {
-					log.Println("Excluded metrics from:", c.RemoteAddr(), ",for path:", path)
+					log.Println("Excluded metrics from:", conn.RemoteAddr(), ",for path:", path)
 					// drop due to exclude filter
-					c.Close()
+					//c.Close()
 					return
 				}
 
@@ -510,7 +511,7 @@ func main() {
 					}
 				}
 				if failure != "" {
-					c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+					conn.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
 					return
 				}
 				sort.Strings(prom.LabelSlice)
@@ -520,7 +521,7 @@ func main() {
 
 			// Handle the incoming reflection satellite connection
 			if urlHost != "" {
-				ref := &reflector{conn: c, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
+				ref := &reflector{conn: conn, urlSuffix: urlSuffix, urlHost: urlHost, close: make(chan int, 1)}
 				PromsLock.Lock()
 				if p, ok := Proms[prom.Hash]; ok && p.UseEndpoint == false {
 					delete(Proms, prom.Hash)
@@ -546,12 +547,12 @@ func main() {
 				if debug {
 					log.Println("--Closing sub connection")
 				}
-				c.Close()
+				//c.Close()
 				return
 			}
 
 			if failure != "" {
-				c.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
+				conn.Write([]byte("HTTP/1.1 500 Error: " + failure + cl(failure) + srv + failure))
 				return
 			}
 
@@ -574,7 +575,7 @@ func main() {
 						//	log.Println("using map value for path redirect", path, "->", p.Path)
 						//}
 						if p.UseEndpoint {
-							c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + p.Path + "/" + srv))
+							conn.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + p.Path + "/" + srv))
 							return
 						}
 						/*path = p.Path
@@ -605,7 +606,7 @@ func main() {
 								log.Println("Waiting for endpoint to become available")
 							}
 							time.Sleep(2 * time.Second)
-							if c.RemoteAddr() == nil {
+							if conn.RemoteAddr() == nil {
 								return
 							}
 						}
@@ -615,7 +616,7 @@ func main() {
 							}
 
 							if len(parts) < 4 {
-								c.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + path + "/" + srv))
+								conn.Write([]byte("HTTP/1.1 302 Redirect to add slash\nLocation: " + urlPrefix + path + "/" + srv))
 								return
 							}
 
@@ -645,13 +646,13 @@ func main() {
 								fmt.Printf("GET " + ref.urlSuffix + parts[3] + " HTTP/1.1\n" + strings.Join(headers, "") + "\n\n")
 							}
 							ref.conn.Write([]byte("GO\nGET " + ref.urlSuffix + parts[3] + " HTTP/1.1\n" + strings.Join(headers, "") + "\n\n"))
-							go io.Copy(c, ref.conn)
+							go io.Copy(conn, ref.conn)
 							io.Copy(ref.conn, c)
 							if debug {
 								log.Println("Closing connections")
 							}
 							ref.close <- 1
-							c.Close()
+							//c.Close()
 							return
 						}
 					} else {
@@ -670,24 +671,24 @@ func main() {
 									"Call the metrics detective, they're lost.",
 									"Unsure!",
 								}
-								fmt.Fprintf(c, "HTTP/1.1 503  %s\nContent-Type: text/text; charset=UTF-8%s# EOF\n",
+								fmt.Fprintf(conn, "HTTP/1.1 503  %s\nContent-Type: text/text; charset=UTF-8%s# EOF\n",
 									quotes[rand.Intn(len(quotes))], srv)
 								failure = "Could not find " + path
 							} else {
-								//c.Write([]byte("HTTP/1 200 As requested" + ct + srv))
+								//conn.Write([]byte("HTTP/1 200 As requested" + ct + srv))
 								if compressed {
-									c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Type: text/text; charset=UTF-8%s", srv)))
+									conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Type: text/text; charset=UTF-8%s", srv)))
 									gzipReader, err := gzip.NewReader(f)
 									if err != nil {
 										log.Println("err reading in gzip file", err)
 									}
-									_, err = io.Copy(c, gzipReader)
+									_, err = io.Copy(conn, gzipReader)
 									if err != nil {
 										log.Println("err reading in file", err)
 									}
 								} else {
-									c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Length: %d\nContent-Type: text/text; charset=UTF-8%s", fi.Size(), srv)))
-									_, err = io.Copy(c, f)
+									conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Length: %d\nContent-Type: text/text; charset=UTF-8%s", fi.Size(), srv)))
+									_, err = io.Copy(conn, f)
 									if err != nil {
 										log.Println("err reading in file", err)
 									}
@@ -710,7 +711,7 @@ func main() {
 			if method == "POST" {
 				prom.Size = contLen
 				if cont100 {
-					c.Write([]byte("HTTP/1.1 100 Continue\n\n"))
+					conn.Write([]byte("HTTP/1.1 100 Continue\n\n"))
 				}
 
 				// postpone checking for new metric until the data is saved
@@ -743,7 +744,7 @@ func main() {
 				br := bufio.NewReader(c)
 
 				// Log when and where the data file came from
-				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
+				fmt.Fprintf(w, "# From %v on %v\n", conn.RemoteAddr(), time.Now())
 				fmt.Fprintf(w, "prom_collector_timestamp %v %v\n", prom.TimeStr, prom.TimeStr)
 
 				// Avoid duplicate HELPs or TYPEs
@@ -894,7 +895,7 @@ func main() {
 				if !promExists {
 					log.Println("New metric found", prom)
 				}
-				c.Write([]byte("HTTP/1.1 200 Go, and do what is right\nTransfer-Encoding: chunked" + srv))
+				conn.Write([]byte("HTTP/1.1 200 Go, and do what is right\nTransfer-Encoding: chunked" + srv))
 
 			}
 		}(conn)
