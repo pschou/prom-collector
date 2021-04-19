@@ -484,7 +484,9 @@ func main() {
 			// Build the hash value for the URL value provided
 			if !hash_url {
 				if excludePath != nil && excludePath.MatchString(path) {
+					log.Println("Excluded metrics from:", c.RemoteAddr(), ",for path:", path)
 					// drop due to exclude filter
+					c.Close()
 					return
 				}
 
@@ -661,18 +663,36 @@ func main() {
 						if err == nil {
 							defer f.Close()
 							fi, err := f.Stat()
-							if err != nil {
+							if err != nil || fi.IsDir() {
+								quotes := []string{"They are here someplace, have you seen the metrics?",
+									"Where, oh, where did I leave those metrics now?",
+									"Hmm... I think I left them, here... nope!",
+									"Call the metrics detective, they're lost.",
+									"Unsure!",
+								}
+								fmt.Fprintf(c, "HTTP/1.1 503  %s\nContent-Type: text/text; charset=UTF-8%s# EOF\n",
+									quotes[rand.Intn(len(quotes))], srv)
 								failure = "Could not find " + path
 							} else {
-								f.Close()
-								c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Length: %d\nContent-Type: text/text; charset=UTF-8%s", fi.Size(), srv)))
 								//c.Write([]byte("HTTP/1 200 As requested" + ct + srv))
 								if compressed {
-									gzipReader, _ := gzip.NewReader(f)
-									io.Copy(c, gzipReader)
+									c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Type: text/text; charset=UTF-8%s", srv)))
+									gzipReader, err := gzip.NewReader(f)
+									if err != nil {
+										log.Println("err reading in gzip file", err)
+									}
+									_, err = io.Copy(c, gzipReader)
+									if err != nil {
+										log.Println("err reading in file", err)
+									}
 								} else {
-									io.Copy(c, f)
+									c.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Length: %d\nContent-Type: text/text; charset=UTF-8%s", fi.Size(), srv)))
+									_, err = io.Copy(c, f)
+									if err != nil {
+										log.Println("err reading in file", err)
+									}
 								}
+								//c.flush()
 								return
 							}
 						} else {
@@ -705,6 +725,7 @@ func main() {
 					log.Println("could not create tmp data file", dataTmp)
 					return
 				}
+				defer os.Remove(dataTmp)
 
 				var w io.Writer
 				var gzipWriter *gzip.Writer
@@ -718,18 +739,22 @@ func main() {
 					w = bufWriter
 				}
 
+				// Create buffer reader to prevent system calls
 				br := bufio.NewReader(c)
 
 				// Log when and where the data file came from
 				fmt.Fprintf(w, "# From %v on %v\n", c.RemoteAddr(), time.Now())
 				fmt.Fprintf(w, "prom_collector_timestamp %v %v\n", prom.TimeStr, prom.TimeStr)
 
-				//fmt.Println("keypairs=", prom.LabelMap, "outpath", prom.LabelSlice, "hash", prom.Hash, "path", prom.Path, "proms", Proms)
+				// Avoid duplicate HELPs or TYPEs
+				HELPS := []string{}
+				TYPES := []string{}
 
-				HELPS := make([]string, 0)
-				TYPES := make([]string, 0)
+				var CountFiltered, CountMetric, CountInvalid int
+				var LatestTime int64
 
-				// Create buffer reader to prevent system calls
+				// This is the main parsing routine.  It has been written to try to
+				// recover any prom format errors and be efficient.
 
 				i := contLen
 			PromParse:
@@ -756,6 +781,7 @@ func main() {
 										continue PromParse
 									}
 								}
+								HELPS = append(HELPS, p[0])
 							} else {
 								// Drop any empty helps
 								j = -1
@@ -774,6 +800,7 @@ func main() {
 										continue PromParse
 									}
 								}
+								TYPES = append(TYPES, p[0])
 							} else {
 								// Drop any empty types
 								j = -1
@@ -781,7 +808,7 @@ func main() {
 							}
 						}
 
-						if strings.HasPrefix(line, "# EOF") {
+						if strings.HasPrefix(line, "#EOF") || strings.HasPrefix(line, "# EOF") {
 							// Strip off EOF as we'll add our own
 							j = -1
 							continue
@@ -796,16 +823,24 @@ func main() {
 						MetricName, MetricLabels, MetricValue, MetricTime, MetricErr := prom_getparts(line, prom.LabelMap)
 
 						if MetricErr != "" {
+							CountInvalid++
 							fmt.Fprintf(w, "# %s\n", MetricErr)
 						}
 
 						if MetricTime == "" {
 							MetricTime = prom.TimeStr
+						} else {
+							tm, err := strconv.ParseInt(MetricTime, 10, 64)
+							if tm > LatestTime && err == nil {
+								LatestTime = tm
+							}
 						}
 
 						if excludeMetric != nil && excludeMetric.MatchString(MetricName) {
 							// drop due to exclude filter
+							CountFiltered++
 						} else {
+							CountMetric++
 
 							if MetricName != "" {
 								if MetricLabels == "" {
@@ -822,6 +857,14 @@ func main() {
 						break
 					}
 				}
+				if LatestTime > 0 {
+					fmt.Fprintf(w, "prom_collector_latency_seconds %f %s\n",
+						float64(prom.Time.UnixNano()/1e6-LatestTime)/1e3, prom.TimeStr)
+				}
+				fmt.Fprintf(w, "prom_collector_metric_count %d %s\n", CountMetric, prom.TimeStr)
+				fmt.Fprintf(w, "prom_collector_invalid_count %d %s\n", CountInvalid, prom.TimeStr)
+				fmt.Fprintf(w, "prom_collector_filtered_count %d %s\n", CountFiltered, prom.TimeStr)
+				fmt.Fprintf(w, "# EOF\n")
 
 				if compressed {
 					//gzipWriter.Flush()
