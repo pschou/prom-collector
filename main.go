@@ -895,7 +895,7 @@ func main() {
 				if !promExists {
 					log.Println("New metric found", prom)
 				}
-				conn.Write([]byte("HTTP/1.1 200 Go, and do what is right\nTransfer-Encoding: chunked" + srv))
+				conn.Write([]byte("HTTP/1.1 200 Go, and do what is right\nContent-Length: 0" + srv))
 
 			}
 		}(conn)
