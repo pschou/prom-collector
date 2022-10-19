@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"math/rand"
+
 	//"encoding/json"
 	"bufio"
 	"compress/gzip"
@@ -18,13 +19,16 @@ import (
 	"encoding/pem"
 	"fmt"
 	"net/url"
+
 	//"io"
-	"github.com/pschou/go-params"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+
+	"github.com/pschou/go-params"
+
 	//"regexp"
 	"bytes"
 	"regexp"
@@ -196,10 +200,13 @@ func main() {
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
 				CipherSuites: []uint16{
-					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 					tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_AES_256_GCM_SHA384,
+					tls.TLS_AES_128_GCM_SHA256,
+					tls.TLS_CHACHA20_POLY1305_SHA256,
 				},
 			}
 		} else {
@@ -439,10 +446,15 @@ func main() {
 
 			// Return the last written JSON for external queries
 			if method == "GET" && path == "/json" {
-				f, err := os.Open(jsonPath)
-				if err == nil {
-					io.Copy(conn, f)
-				}
+				conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Type: text/text; charset=UTF-8%s", srv)))
+				conn.Write([]byte(dumpJson()))
+				//f, err := os.Open(jsonPath)
+				//if err == nil {
+				//	io.Copy(conn, f)
+				//}
+				//f.Close()
+				//conn.Flush()
+				//conn.Close()
 				return
 			}
 
@@ -903,6 +915,36 @@ func main() {
 }
 
 var jsonLock sync.Mutex
+
+func dumpJson() string {
+	jsonLock.Lock()
+	defer jsonLock.Unlock()
+	tgts := []string{}
+	PromsArr := make([]Prom, 0)
+	PromsLock.Lock()
+	for _, p := range Proms {
+		PromsArr = append(PromsArr, p)
+	}
+	PromsLock.Unlock()
+	// sort our list of Proms by path
+	sort.SliceStable(PromsArr, func(i, j int) bool {
+		return PromsArr[i].Path < PromsArr[j].Path
+	})
+	for _, p := range PromsArr {
+		//lbls := []string{}
+		//for l, v := range p.LabelMap {
+		//	lbls = append(lbls, fmt.Sprintf("%q:%q", l, v))
+		//}
+		jsonString, _ := json.Marshal(p.LabelMap)
+		//tgts = append(tgts, fmt.Sprintf("{\"labels\":{%s},\"targets\": [%q]}", strings.Join(lbls, ","), p.Path))
+		slash := ""
+		if p.UseEndpoint {
+			slash = "/"
+		}
+		tgts = append(tgts, fmt.Sprintf("{\"labels\":%s,\"targets\": [%q]}", jsonString, "-"+p.Path[1:]+slash))
+	}
+	return fmt.Sprintf("[%s]", strings.Join(tgts, ","))
+}
 
 func createJson() {
 	jsonLock.Lock()
