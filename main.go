@@ -446,7 +446,9 @@ func main() {
 
 			// Return the last written JSON for external queries
 			if method == "GET" && path == "/json" {
-				conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\nContent-Type: text/text; charset=UTF-8%s", srv)))
+				conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\n"+
+					"Strict-Transport-Security: max-age=3600; includeSubDomains\n"+
+					"Content-Type: text/text; charset=UTF-8%s", srv)))
 				conn.Write([]byte(dumpJson()))
 				//f, err := os.Open(jsonPath)
 				//if err == nil {
