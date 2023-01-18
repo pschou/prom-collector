@@ -80,6 +80,7 @@ var basePath = "/dev/shm/collector"
 var jsonPath = "/dev/shm/metrics.json"
 var excludePath *regexp.Regexp
 var excludeMetric *regexp.Regexp
+var hsts time.Duration
 
 func loadKeys() {
 	keypair_mu.RLock()
@@ -144,6 +145,7 @@ func main() {
 	params.PresVar(&compressed, "compress", "Turn on gzip compression")
 
 	params.GroupingSet("Certificate")
+	params.DurationVar(&hsts, "hsts", 10*time.Minute, "HSTS expiration time", "TIME")
 	params.StringVar(&certFile, "cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&keyFile, "key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&rootFile, "ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
@@ -151,6 +153,13 @@ func main() {
 	params.CommandLine.Indent = 2
 
 	params.Parse()
+
+	srv := "\nServer: Prom Collector - Written by Paul Schou (github.com/pschou/prom-collector)\n\n"
+	if hsts > 0 {
+		srv = fmt.Sprintf(
+			"\nStrict-Transport-Security: max-age=%d; includeSubDomains"+
+				"%s", int(hsts/time.Second), srv)
+	}
 
 	if *exclude_path != "" {
 		excludePath, _ = regexp.Compile(*exclude_path)
@@ -348,7 +357,6 @@ func main() {
 			contLen := -1
 			failure := ""
 			ch := "\nContent-Type: text/html; charset=UTF-8"
-			srv := "\nServer: Prom Collector - Written by Paul Schou (github.com/pschou/prom-collector)\n\n"
 			headers := []string{}
 
 			// read input until emtpy line (http header ending)
@@ -447,8 +455,7 @@ func main() {
 			// Return the last written JSON for external queries
 			if method == "GET" && path == "/json" {
 				conn.Write([]byte(fmt.Sprintf("HTTP/1.1 200 As requested\n"+
-					"Strict-Transport-Security: max-age=3600; includeSubDomains\n"+
-					"Content-Type: text/text; charset=UTF-8%s", srv)))
+					"Content-Type: application/json; charset=UTF-8%s", srv)))
 				conn.Write([]byte(dumpJson()))
 				//f, err := os.Open(jsonPath)
 				//if err == nil {
