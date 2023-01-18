@@ -20,28 +20,33 @@ To specify a new or change the json output (for the proemetheus scrape), use:
 ```
 $ ./prom-collector -h
 Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020
-Prsonal use only, provided AS-IS -- not responsible for loss.
-Usage implies agreement.
+Provided AS-IS, not responsible for loss, see LICENSE.  Usage implies agreement.
 
 Usage: ./prom-collector [options...]
 
 Options:
---ca FILE             File to load with ROOT CAs - reloaded every minute by adding any new entries
-                        (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
---cert FILE           File to load with CERT - automatically reloaded every minute
-                        (Default: "/etc/pki/server.pem")
---debug               Verbose output
---json JSON_FILE      Path into which to put all the prometheus endpoints for polling
-                        (Default: "/dev/shm/metrics.json")
---key FILE            File to load with KEY - automatically reloaded every minute
-                        (Default: "/etc/pki/server.pem")
---listen HOST:PORT    Listen address for metrics  (Default: ":9550")
---path DIRECTORY      Path into which to put the prometheus data  (Default: "/dev/shm/collector")
---prefix URL_PREFIX   Used for all incoming requests, useful for a reverse proxy endpoint
-                        (Default: "/collector")
---secure-server BOOL  Enforce TLS 1.2+ on server side  (Default: true)
---tls BOOL            Enable listener TLS  (Default: false)
---verify-server BOOL  Verify or disable server certificate check  (Default: true)
+  --compress           Turn on gzip compression
+  --debug              Verbose output
+  --exclude-metric REGEX  Metric filter for removing metric from dump  (Default: "")
+  --exclude-path REGEX  Path filter for removing metric push endpoints  (Default: "")
+  --json JSON_FILE     Path into which to put all the prometheus endpoints for polling
+                         (Default: "/dev/shm/metrics.json")
+  --listen HOST:PORT   Listen address for metrics  (Default: ":9550")
+  --only-localnet      Allow reading of metrics by localnet endpoints (ie: 192.168/16, 172.16/20, 10/8)
+  --path DIRECTORY     Path into which to put the prometheus data  (Default: "/dev/shm/collector")
+  --prefix URL_PREFIX  Used for all incoming requests, useful for a reverse proxy endpoint
+                         (Default: "/collector")
+  --secure-server BOOL  Enforce TLS 1.2+ on server side  (Default: true)
+  --tls BOOL           Enable listener TLS  (Default: false)
+  --verify-server BOOL  Verify or disable server certificate check  (Default: true)
+Certificate options:
+  --ca FILE            File to load with ROOT CAs - reloaded every minute by adding any new entries
+                         (Default: "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+  --cert FILE          File to load with CERT - automatically reloaded every minute
+                         (Default: "/etc/pki/server.pem")
+  --hsts TIME          HSTS expiration time  (Default: 10m0s)
+  --key FILE           File to load with KEY - automatically reloaded every minute
+                         (Default: "/etc/pki/server.pem")
 ```
 
 On the satellite system run
