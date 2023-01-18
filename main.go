@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"net/netip"
 	"net/url"
 
 	//"io"
@@ -63,6 +64,7 @@ var Proms = map[[16]byte]Prom{}
 var PromsLock sync.Mutex
 
 var compressed = false
+var only_local = false
 
 var version = "0.1"
 var urlPrefix = ""
@@ -143,6 +145,7 @@ func main() {
 	//var jsonstatic_path = params.String("dynamic-list", jsonPath, "Path into which to put just static prometheus json endpoints for polling")
 	//params.SetUsageIndent(23)
 	params.PresVar(&compressed, "compress", "Turn on gzip compression")
+	params.PresVar(&only_local, "only-localnet", "Allow reading of metrics by localnet endpoints (ie: 192.168/16, 172.16/20, 10/8)")
 
 	params.GroupingSet("Certificate")
 	params.DurationVar(&hsts, "hsts", 10*time.Minute, "HSTS expiration time", "TIME")
@@ -579,6 +582,14 @@ func main() {
 
 			// handle the get method for returning results to the prometheus client
 			if method == "GET" {
+				if only_local {
+					remote_IP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+					remote_netIP, err := netip.ParseAddr(remote_IP)
+					if err != nil || !remote_netIP.IsPrivate() {
+						fmt.Fprintf(conn, "HTTP/1.1 403 Forbidden%sOnly localnet IPs are allowed.", srv)
+						return
+					}
+				}
 				PromsArr := make([]Prom, 0)
 				PromsLock.Lock()
 				for _, p := range Proms {
