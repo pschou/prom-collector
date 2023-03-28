@@ -5,9 +5,9 @@ FLAGS := "-s -w -X main.version=${VERSION}"
 
 
 build:
-	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o ${PROG_NAME} main.go
+	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o ${PROG_NAME} prom-collector.go lib-*.go
 	upx --lzma ${PROG_NAME}
-	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o prom-satellite satellite.go
+	CGO_ENABLED=0 go build -ldflags=${FLAGS} -o prom-satellite prom-satellite.go lib-*.go
 	upx --lzma prom-satellite
 
 go:

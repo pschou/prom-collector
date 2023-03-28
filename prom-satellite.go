@@ -108,14 +108,12 @@ func main() {
 	params.Usage = func() {
 		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Satellite, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nProvided AS-IS -- not responsible for loss.\nUsage implies agreement. (Version: %s)\n\nUsage: %s: [options...]\n\n", version, os.Args[0])
 		params.PrintDefaults()
+		fmt.Fprintln(params.CommandLine.Output(), cipher_list)
 	}
 	var collector = params.String("collector", "http://localhost:9550/instance/test", "Remote listen URL for connector", "URL")
 	var Method = params.String("method", method, "Method to use to connect to collector", "METHOD")
 	var target = params.String("target", "http://localhost/", "Local endpoint to tunnel the collector to", "URL")
 	var http_proxy = params.String("http-proxy", "", "Proxy for establishing connections to prom-collector", "PROXY-URL")
-	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
-	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
-	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
 	var verify_target = params.Bool("verify-target", true, "Verify or disable client certificate check, used to ignore SAN", "BOOL")
 	var verify_collector = params.Bool("verify-collector", true, "Verify or disable server certificate check, used to ignore SAN", "BOOL")
 	var secure_target = params.Bool("secure-target", true, "Enforce TLS 1.2+ on client side", "BOOL")
@@ -123,6 +121,12 @@ func main() {
 	//var tls_host = params.String("host", "", "Hostname to verify outgoing connection with")
 	var verbose = params.Pres("debug", "Verbose output")
 	var in_threads = params.Int("threads", threads, "Number of concurrent tcp streams to run to improve performance", "NUM")
+	params.GroupingSet("Certificate")
+	var cert_file = params.String("cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
+	var key_file = params.String("key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
+	var root_file = params.String("ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+	params.StringVar(&ciphers, "ciphers", "RSA_WITH_AES_128_GCM_SHA256, RSA_WITH_AES_256_GCM_SHA384, ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, ECDHE_RSA_WITH_AES_128_GCM_SHA256, ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, ECDHE_RSA_WITH_AES_256_GCM_SHA384, ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "List of ciphers to enable", "LIST")
+
 	params.Parse()
 
 	var err error
@@ -284,15 +288,7 @@ func mkChan() {
 				MinVersion:               tls.VersionTLS12,
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
-				CipherSuites: []uint16{
-					tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_AES_256_GCM_SHA384,
-					tls.TLS_AES_128_GCM_SHA256,
-					tls.TLS_CHACHA20_POLY1305_SHA256,
-				},
+				CipherSuites:             cipherList(),
 			}
 		} else {
 			config = tls.Config{RootCAs: rootpool,
@@ -398,12 +394,7 @@ func mkChan() {
 					MinVersion:               tls.VersionTLS12,
 					CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 					PreferServerCipherSuites: true,
-					CipherSuites: []uint16{
-						tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-						tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-						tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-						tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-					},
+					CipherSuites:             cipherList(),
 				}
 			} else {
 				tlsConfig = &tls.Config{Certificates: []tls.Certificate{*keypair}, RootCAs: rootpool,

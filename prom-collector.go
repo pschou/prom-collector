@@ -130,6 +130,7 @@ func main() {
 	params.Usage = func() {
 		fmt.Fprintf(params.CommandLine.Output(), "Prometheus Collector, written by Paul Schou (github.com/pschou/prom-collector) in December 2020\nProvided AS-IS, not responsible for loss, see LICENSE.  Usage implies agreement. (Version: %s)\n\nUsage: %s [options...]\n\n", version, os.Args[0])
 		params.PrintDefaults()
+		fmt.Fprintln(params.CommandLine.Output(), cipher_list)
 	}
 	var listen = params.String("listen", ":9550", "Listen address for metrics", "HOST:PORT")
 	var prefix = params.String("prefix", "/collector", "Used for all incoming requests, useful for a reverse proxy endpoint\n", "URL_PREFIX")
@@ -152,6 +153,7 @@ func main() {
 	params.StringVar(&certFile, "cert", "/etc/pki/server.pem", "File to load with CERT - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&keyFile, "key", "/etc/pki/server.pem", "File to load with KEY - automatically reloaded every minute\n", "FILE")
 	params.StringVar(&rootFile, "ca", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "File to load with ROOT CAs - reloaded every minute by adding any new entries\n", "FILE")
+	params.StringVar(&ciphers, "ciphers", "RSA_WITH_AES_128_GCM_SHA256, RSA_WITH_AES_256_GCM_SHA384, ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, ECDHE_RSA_WITH_AES_128_GCM_SHA256, ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, ECDHE_RSA_WITH_AES_256_GCM_SHA384, ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256", "List of ciphers to enable", "LIST")
 
 	params.CommandLine.Indent = 2
 
@@ -211,16 +213,7 @@ func main() {
 				MinVersion:               tls.VersionTLS12,
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
-				CipherSuites: []uint16{
-					tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-				},
+				CipherSuites:             cipherList(),
 			}
 		} else {
 			config = tls.Config{RootCAs: rootpool,
