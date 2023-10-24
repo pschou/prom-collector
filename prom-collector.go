@@ -207,6 +207,7 @@ func main() {
 
 		var config tls.Config
 		if *secure_server {
+			fmt.Println("cipher list:", cipherList())
 			config = tls.Config{RootCAs: rootpool,
 				Certificates: []tls.Certificate{},
 				ClientCAs:    rootpool, InsecureSkipVerify: *verify_server == false,
@@ -1116,6 +1117,7 @@ func prom_getparts(line string, path_parts map[string]string) (string, string, s
 				if line[i] == ',' {
 					label_part = 0
 					label_parti = i + 1
+          for ; i < len(line) && line[i] == ' '; i++ {}
 				} else {
 					label_part = 0
 					prom_err = fmt.Sprintf("%s  LABEL ISSUE", prom_err)

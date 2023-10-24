@@ -1,7 +1,4 @@
-//
-//  This package was written by Paul Schou in Dec 2020
-//
-//
+// This package was written by Paul Schou in Dec 2020
 package main
 
 import (
@@ -29,7 +26,6 @@ type DNS struct {
 }
 
 var version = "0.1"
-var target_addr = ""
 var DNSCache = make(map[string]DNS, 0)
 var keyFile = ""
 var certFile = ""
@@ -381,7 +377,7 @@ func mkChan() {
 		backoff = false
 
 		if debug {
-			fmt.Println("Local target url set to", url_target)
+			fmt.Println("Local target url set to", url_target.Redacted())
 		}
 
 		var tc net.Conn
@@ -424,15 +420,33 @@ func mkChan() {
 		} else {
 			log.Fatal("Unknown Dial URL scheme: " + url_collector.Scheme)
 		}
-		defer tc.Close()
 
 		if debug {
-			log.Println("connecting endpoints:", target_addr)
+			log.Println("connecting endpoints:", l.RemoteAddr())
 		}
-		go io.Copy(l, tc)
-		io.Copy(tc, l)
+		locker := make(chan uint8)
+		go func() {
+			n, err := io.Copy(l, tc)
+			if debug {
+				log.Println("to collector:", n, "error:", err)
+			}
+			locker <- 0
+		}()
+		go func() {
+			n, err := io.Copy(tc, l)
+			if debug {
+				log.Println("from collector:", n, "error:", err)
+			}
+			locker <- 0
+		}()
+		<-locker
+		time.Sleep(time.Second)
+		l.Close()
+		tc.Close()
+		<-locker
+		close(locker)
 		if debug {
-			log.Println("closed", target_addr)
+			log.Println("closed", l.RemoteAddr())
 		}
 	}
 }
