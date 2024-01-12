@@ -1,8 +1,6 @@
+// This package was written by Paul Schou in Dec 2020
 //
-//  This package was written by Paul Schou in Dec 2020
-//
-//  Prometheus Collector - basic end point package for sending prometheus metrics!
-//
+// Prometheus Collector - basic end point package for sending prometheus metrics!
 package main
 
 import (
@@ -205,16 +203,25 @@ func main() {
 			}
 		}()
 
+		cipherList, minVer, maxVer := buildCipherList()
+		//fmt.Println("cipher list:", cipherList)
+
+		// Strip out ciphers which are not requested
+		defaultCipherSuitesTLS13 = intersect(defaultCipherSuitesTLS13, cipherList)
+		defaultCipherSuitesTLS13NoAES = intersect(defaultCipherSuitesTLS13NoAES, cipherList)
+
 		var config tls.Config
 		if *secure_server {
-			fmt.Println("cipher list:", cipherList())
+			fmt.Println("cipher list:", cipherList)
 			config = tls.Config{RootCAs: rootpool,
 				Certificates: []tls.Certificate{},
 				ClientCAs:    rootpool, InsecureSkipVerify: *verify_server == false,
-				MinVersion:               tls.VersionTLS12,
+				MinVersion: minVer,
+				MaxVersion: maxVer,
+
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
-				CipherSuites:             cipherList(),
+				CipherSuites:             cipherList,
 			}
 		} else {
 			config = tls.Config{RootCAs: rootpool,
@@ -1117,7 +1124,8 @@ func prom_getparts(line string, path_parts map[string]string) (string, string, s
 				if line[i] == ',' {
 					label_part = 0
 					label_parti = i + 1
-          for ; i < len(line) && line[i] == ' '; i++ {}
+					for ; i < len(line) && line[i] == ' '; i++ {
+					}
 				} else {
 					label_part = 0
 					prom_err = fmt.Sprintf("%s  LABEL ISSUE", prom_err)
@@ -1162,23 +1170,25 @@ func prom_getparts(line string, path_parts map[string]string) (string, string, s
 	return metric, labels, value, time, prom_err
 }
 
-/*func parseLine(s string, t string) string {
-	st := strings.Index(s, "{")
-	if st > 0 {
-		en := strings.LastIndex(s, "{")
-	} else {
-		p := strings.SplitN(s, " ", 2)
-		lbl := p[0]
-		if len(p) < 2 {
-			return fmt.Sprintf("%s nan %s", lbl, t)
-		}
-		p = strings.SplitN(strings.TrimSpace(p[1]), " ", 2)
-		if len(p) < 2 {
-			return fmt.Sprintf("%s %s %s", lbl, t)
-		}
+/*
+	func parseLine(s string, t string) string {
+		st := strings.Index(s, "{")
+		if st > 0 {
+			en := strings.LastIndex(s, "{")
+		} else {
+			p := strings.SplitN(s, " ", 2)
+			lbl := p[0]
+			if len(p) < 2 {
+				return fmt.Sprintf("%s nan %s", lbl, t)
+			}
+			p = strings.SplitN(strings.TrimSpace(p[1]), " ", 2)
+			if len(p) < 2 {
+				return fmt.Sprintf("%s %s %s", lbl, t)
+			}
 
+		}
 	}
-}*/
+*/
 func check_metric_name(line string) bool {
 	for i := 0; i < len(line); i++ {
 		c := line[i]

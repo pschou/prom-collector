@@ -4,7 +4,16 @@ import (
 	"crypto/tls"
 	"log"
 	"strings"
+	"unicode"
+
+	_ "unsafe"
 )
+
+//go:linkname defaultCipherSuitesTLS13  crypto/tls.defaultCipherSuitesTLS13
+var defaultCipherSuitesTLS13 []uint16
+
+//go:linkname defaultCipherSuitesTLS13NoAES crypto/tls.defaultCipherSuitesTLS13NoAES
+var defaultCipherSuitesTLS13NoAES []uint16
 
 var ciphers = ""
 
@@ -69,15 +78,47 @@ var cipher_map = map[string]uint16{
 
 var tlsConfig *tls.Config
 
-func cipherList() []uint16 {
-	cipherList := []uint16{}
-	for _, c := range strings.Split(ciphers, ",") {
-		c = strings.TrimSpace(c)
-		if cv, ok := cipher_map[c]; ok {
-			cipherList = append(cipherList, cv)
-		} else {
-			log.Fatal("Unknown cipher: ", c)
+func buildCipherList() (cipherList []uint16, minVer, maxVer uint16) {
+	f := func(c rune) bool {
+		return !unicode.IsLetter(c) && !unicode.IsNumber(c) && c != '_'
+	}
+	minVer = 0xffff
+
+	for _, testCipher := range strings.FieldsFunc(ciphers, f) {
+		testCipher = strings.TrimSpace(testCipher)
+		var found bool
+		for _, c := range tls.CipherSuites() {
+			shortName := strings.TrimPrefix(c.Name, "TLS_")
+			if testCipher == shortName {
+				found = true
+				cipherList = append(cipherList, c.ID)
+				if first := c.SupportedVersions[0]; first < minVer {
+					minVer = first
+				}
+				if last := c.SupportedVersions[len(c.SupportedVersions)-1]; last > maxVer {
+					maxVer = last
+				}
+				break
+			}
+		}
+		if minVer < tls.VersionTLS12 {
+			minVer = tls.VersionTLS12
+		}
+		if !found {
+			log.Fatal("Unknown cipher: ", testCipher)
 		}
 	}
-	return cipherList
+	return
+}
+
+func intersect(in, match []uint16) (out []uint16) {
+	for _, a := range in {
+		for _, b := range match {
+			if a == b {
+				out = append(out, a)
+				break
+			}
+		}
+	}
+	return
 }

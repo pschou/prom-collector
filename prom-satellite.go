@@ -278,13 +278,21 @@ func mkChan() {
 	if url_collector.Scheme == "https" {
 		var config tls.Config
 		if secureCollector {
+			cipherList, minVer, maxVer := buildCipherList()
+			//fmt.Println("cipher list:", cipherList)
+
+			// Strip out ciphers which are not requested
+			defaultCipherSuitesTLS13 = intersect(defaultCipherSuitesTLS13, cipherList)
+			defaultCipherSuitesTLS13NoAES = intersect(defaultCipherSuitesTLS13NoAES, cipherList)
+
 			config = tls.Config{RootCAs: rootpool,
 				Certificates: []tls.Certificate{},
 				ClientCAs:    rootpool, InsecureSkipVerify: verifyCollector == false, ServerName: uHostname,
-				MinVersion:               tls.VersionTLS12,
+				MinVersion:               minVer,
+				MaxVersion:               maxVer,
 				CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 				PreferServerCipherSuites: true,
-				CipherSuites:             cipherList(),
+				CipherSuites:             cipherList,
 			}
 		} else {
 			config = tls.Config{RootCAs: rootpool,
@@ -385,12 +393,20 @@ func mkChan() {
 		if url_target.Scheme == "https" {
 			var tlsConfig *tls.Config
 			if secureTarget {
+				cipherList, minVer, maxVer := buildCipherList()
+				//fmt.Println("cipher list:", cipherList)
+
+				// Strip out ciphers which are not requested
+				defaultCipherSuitesTLS13 = intersect(defaultCipherSuitesTLS13, cipherList)
+				defaultCipherSuitesTLS13NoAES = intersect(defaultCipherSuitesTLS13NoAES, cipherList)
+
 				tlsConfig = &tls.Config{Certificates: []tls.Certificate{*keypair}, RootCAs: rootpool,
 					ClientCAs: rootpool, InsecureSkipVerify: verifyTarget == false,
-					MinVersion:               tls.VersionTLS12,
+					MinVersion:               minVer,
+					MaxVersion:               maxVer,
 					CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 					PreferServerCipherSuites: true,
-					CipherSuites:             cipherList(),
+					CipherSuites:             cipherList,
 				}
 			} else {
 				tlsConfig = &tls.Config{Certificates: []tls.Certificate{*keypair}, RootCAs: rootpool,
